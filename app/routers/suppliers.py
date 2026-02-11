@@ -95,3 +95,24 @@ def batch_resolve_factors(db: Session = Depends(get_db)):
             resolved_count += 1
 
     return {"total_suppliers": len(suppliers), "resolved": resolved_count}
+
+# -----------------------
+# DELETE: Delete Single Supplier
+# -----------------------
+
+@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_supplier(supplier_id: str, db: Session = Depends(get_db)):
+    supplier = db.query(Supplier).filter(
+        Supplier.supplier_id == supplier_id
+    ).first()
+
+    if not supplier:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Supplier not found."
+        )
+
+    db.delete(supplier)
+    db.commit()
+
+    return None
