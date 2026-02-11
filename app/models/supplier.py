@@ -1,9 +1,9 @@
-# app/models/supplier.py
-
 from sqlalchemy import String, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from datetime import datetime
+from sqlalchemy import DateTime
 import uuid
 
 class Supplier(Base):
@@ -29,4 +29,9 @@ class Supplier(Base):
         UUID(as_uuid=True),
         ForeignKey("emission_factors.id"),
         nullable=True
+    )
+
+    factor_locked_at: Mapped[datetime] = mapped_column(
+    DateTime,
+    nullable=True
     )
