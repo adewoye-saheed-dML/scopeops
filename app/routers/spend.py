@@ -4,6 +4,8 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.spend import SpendRecord
 from app.schemas.spend import SpendCreate, SpendRead
+from app.services.emission_calculator import calculate_emissions
+
 
 router = APIRouter(prefix="/spend", tags=["Spend"])
 
@@ -27,3 +29,8 @@ def create_spend(payload: SpendCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="Internal Server Error"
         )
+
+@router.post("/calculate", response_model=dict)
+def run_batch_calculation(db: Session = Depends(get_db)):
+    updated = calculate_emissions(db)
+    return {"records_updated": updated}
