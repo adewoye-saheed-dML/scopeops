@@ -11,11 +11,12 @@ class SupplierBase(BaseModel):
     industry_name: Optional[str] = None  
 
 class SupplierCreate(SupplierBase):
-    pass
+    reporting_year: Optional[int] = None  
 
 class SupplierRead(SupplierBase):
     resolved_factor_id: Optional[UUID] = None  
     factor_locked_at: Optional[datetime] = None 
+    reporting_year: Optional[int] = None  
 
     class Config:
         from_attributes = True
