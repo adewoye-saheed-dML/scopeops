@@ -1,6 +1,6 @@
 from rapidfuzz import process
 from sqlalchemy.orm import Session
-from scopeops.app.models.emission_factors import EmissionFactor
+from app.models.emission_factors import EmissionFactor  # Fixed import path (removed scopeops.)
 from app.models.supplier import Supplier
 from datetime import datetime
 from app.config.verified_suppliers import VERIFIED_SUPPLIERS
@@ -16,7 +16,12 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
     2. Fuzzy match the supplier's industry to DitchCarbon emission factors.
     """
     # Check for verified supplier overrides
-    key = supplier.supplier_id.lower()
+    # (Ensure we handle NoneType for supplier_name safely)
+    if not supplier.supplier_name:
+        return None
+        
+    key = supplier.supplier_name.lower().strip() # Added strip() for safety
+    
     if key in VERIFIED_SUPPLIERS:
         data = VERIFIED_SUPPLIERS[key]
 
@@ -39,7 +44,8 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
                 name=data["name"],
                 geography="Global",
                 year=data["year"],
-                co2e_per_currency=(data["scope_1"] + data["scope_2"] + data["scope_3"]) / data["revenue"],
+                # Ensure float division
+                co2e_per_currency=(float(data["scope_1"] + data["scope_2"] + data["scope_3"]) / float(data["revenue"])),
                 source_url=None,
                 methodology="Direct corporate disclosure override",
                 version="1.0",
@@ -50,21 +56,25 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
 
         # Assign factor to supplier and lock timestamp
         supplier.resolved_factor_id = factor.id
-        supplier.factor_locked_at = datetime.utcnow()
+        # supplier.factor_locked_at = datetime.utcnow() # Note: This field is missing in your Supplier model!
+        # If 'factor_locked_at' is not in your model, remove the line above.
+        
         db.commit()
         return factor
 
     # Fallback to fuzzy industry match if no verified supplier data
-    if not supplier.industry_name:
+    # Use industry_locked instead of industry_name (based on your Supplier model)
+    if not supplier.industry_locked:
         return None
 
     factors = db.query(EmissionFactor).all()
     factor_names = [f.name for f in factors]
 
+    # UPDATED: Increased score_cutoff to 90 for better accuracy
     match = process.extractOne(
-        supplier.industry_name,
+        supplier.industry_locked,
         factor_names,
-        score_cutoff=75
+        score_cutoff=90
     )
 
     if not match:
@@ -80,7 +90,6 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
 
     if matched_factor:
         supplier.resolved_factor_id = matched_factor.id
-        supplier.factor_locked_at = datetime.utcnow()
         db.commit()
 
     return matched_factor
