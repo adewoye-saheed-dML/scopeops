@@ -1,16 +1,16 @@
 from fastapi import FastAPI, Depends
 from app.database import Base, engine, get_db
-from app.routers import suppliers, spend
+from app.routers import suppliers, spend, emission_factors
 from sqlalchemy import text
 import app.models
 
-# Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI(title="Procurement Carbon Engine")
 
 app.include_router(suppliers.router)
 app.include_router(spend.router)
-
+app.include_router(emission_factors.router)
 
 @app.get("/health/db")
 def db_health_check(db = Depends(get_db)):

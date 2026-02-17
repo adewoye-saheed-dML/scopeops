@@ -1,6 +1,6 @@
 from rapidfuzz import process
 from sqlalchemy.orm import Session
-from app.models.emission_factor import EmissionFactor
+from scopeops.app.models.emission_factors import EmissionFactor
 from app.models.supplier import Supplier
 from datetime import datetime
 from app.config.verified_suppliers import VERIFIED_SUPPLIERS

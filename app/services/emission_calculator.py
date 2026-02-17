@@ -2,7 +2,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.spend import SpendRecord
 from app.models.supplier import Supplier
-from app.models.emission_factor import EmissionFactor
+from app.models.emission_factors import EmissionFactor
 
 def calculate_emissions(db: Session):
     """
@@ -19,7 +19,7 @@ def calculate_emissions(db: Session):
 
     for record in spend_records:
         supplier = db.query(Supplier).filter(
-            Supplier.supplier_id == record.supplier_id
+            Supplier.id == record.supplier_id
         ).first()
 
         if not supplier:

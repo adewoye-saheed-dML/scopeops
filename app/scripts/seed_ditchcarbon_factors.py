@@ -3,7 +3,7 @@ import requests
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from app.database import engine
-from app.models.emission_factor import EmissionFactor
+from scopeops.app.models.emission_factors import EmissionFactor
 
 load_dotenv()
 

@@ -1,6 +1,7 @@
-from app.models.supplier import Supplier
-from app.models.spend import SpendRecord
-from app.models.category import Category
-from app.models.emission_factor import EmissionFactor
-from app.models.emission_estimate import EmissionEstimate
-
+from .supplier import Supplier
+from .supplier_disclosure import SupplierDisclosure
+from .emission_factors import EmissionFactor
+from .spend import SpendRecord
+from .emission_estimate import EmissionEstimate
+from .category import Category
+from .category_factor_mapping import CategoryFactorMapping

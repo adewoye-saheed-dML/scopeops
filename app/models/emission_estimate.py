@@ -1,10 +1,12 @@
-from sqlalchemy import Integer, Numeric, String, DateTime
+# app/models/emission_estimate.py
+
+from sqlalchemy import Integer, Numeric, String, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 from app.database import Base
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import ForeignKey
 import uuid
+
 
 class EmissionEstimate(Base):
     __tablename__ = "emission_estimates"
@@ -19,7 +21,7 @@ class EmissionEstimate(Base):
 
     emission_factor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("supplier_emission_factors.id"),
+        ForeignKey("emission_factors.id"),
         nullable=False
     )
 
