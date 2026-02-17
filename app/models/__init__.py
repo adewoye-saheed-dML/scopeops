@@ -5,3 +5,4 @@ from .spend import SpendRecord
 from .emission_estimate import EmissionEstimate
 from .category import Category
 from .category_factor_mapping import CategoryFactorMapping
+from .user import User
