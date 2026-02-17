@@ -46,6 +46,19 @@ class Supplier(Base):
         nullable=True
     )
 
+    parent_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    parent = relationship(
+        "Supplier",
+        remote_side=[id],
+        backref="children"
+    )
+
+
     resolved_factor = relationship("EmissionFactor")
     disclosures = relationship("SupplierDisclosure", back_populates="supplier")
 

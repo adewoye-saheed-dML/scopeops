@@ -1,5 +1,3 @@
-# app/schemas/supplier.py
-
 from pydantic import BaseModel
 from typing import Optional
 from uuid import UUID
@@ -12,7 +10,7 @@ class SupplierBase(BaseModel):
     industry_locked: str
     region: Optional[str] = None
     sbti_status: Optional[str] = None
-
+    parent_id: Optional[UUID] = None
 
 class SupplierCreate(SupplierBase):
     pass

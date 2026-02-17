@@ -1,0 +1,130 @@
+import os
+import requests
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.user import User
+from app.schemas.auth import UserCreate, UserLogin, Token, UserRead
+from app.services.security import verify_password, get_password_hash, create_access_token, SECRET_KEY, ALGORITHM
+from jose import jwt, JWTError
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+# --- Local Auth ---
+
+@router.post("/signup", response_model=UserRead)
+def signup(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_pw = get_password_hash(user.password)
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_pw,
+        full_name=user.full_name,
+        provider="local"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@router.post("/login", response_model=Token)
+def login(form_data: UserLogin, db: Session = Depends(get_db)):
+    # Check user exists
+    user = db.query(User).filter(User.email == form_data.email).first()
+    if not user or not user.hashed_password:
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    
+    # Verify password
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    
+    # Generate Token
+    access_token = create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
+# --- Google Auth ---
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = "http://localhost:8000/auth/google/callback" 
+
+
+@router.get("/google/url")
+def google_login_url():
+    return {
+        "url": f"https://accounts.google.com/o/oauth2/auth?response_type=code&client_id={GOOGLE_CLIENT_ID}&redirect_uri={GOOGLE_REDIRECT_URI}&scope=openid%20profile%20email&access_type=offline"
+    }
+
+@router.get("/google/callback", response_model=Token)
+def google_auth_callback(code: str, db: Session = Depends(get_db)):
+    # Exchange code for tokens
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+    }
+    res = requests.post(token_url, data=payload)
+    if res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to retrieve token from Google")
+    
+    tokens = res.json()
+    id_token = tokens.get("id_token")
+    
+    # Get User Info from Google
+    user_info_res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token={tokens['access_token']}")
+    user_info = user_info_res.json()
+    
+    email = user_info.get("email")
+    
+    # Check if user exists, else create
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        user = User(
+            email=email,
+            full_name=user_info.get("name"),
+            picture=user_info.get("picture"),
+            provider="google",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # Create JWT 
+    access_token = create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+
+# --- Dependency ---
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+        
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise credentials_exception
+    return user

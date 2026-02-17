@@ -10,9 +10,7 @@ from app.services.emission_calculator import calculate_emissions
 router = APIRouter(prefix="/spend", tags=["Spend"])
 
 
-# -----------------------
-# Create Spend Record
-# -----------------------
+
 @router.post("/", response_model=SpendRead)
 def create_spend(payload: SpendCreate, db: Session = Depends(get_db)):
     try:
@@ -35,18 +33,14 @@ def create_spend(payload: SpendCreate, db: Session = Depends(get_db)):
         )
 
 
-# -----------------------
-# Batch Calculate Emissions
-# -----------------------
+
 @router.post("/calculate", response_model=dict)
 def run_batch_calculation(db: Session = Depends(get_db)):
     updated = calculate_emissions(db)
     return {"records_updated": updated}
 
 
-# -----------------------
-# Spend Summary
-# -----------------------
+
 @router.get("/summary", response_model=dict)
 def spend_summary(db: Session = Depends(get_db)):
 
@@ -77,9 +71,7 @@ def spend_summary(db: Session = Depends(get_db)):
     }
 
 
-# -----------------------
-# Spend Coverage
-# -----------------------
+
 @router.get("/coverage", response_model=dict)
 def spend_coverage(db: Session = Depends(get_db)):
 

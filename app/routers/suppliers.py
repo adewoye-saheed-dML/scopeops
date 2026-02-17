@@ -1,4 +1,3 @@
-# app/routes/suppliers.py
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,14 +5,35 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierCreate, SupplierRead
+from app.routers.auth import get_current_user, User
+from app.services.tree_rollup import get_supplier_tree_rollup
+
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 
 
 @router.post("/", response_model=SupplierRead)
-def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db)):
+def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
     try:
+        # Validate parent_id if provided
+        if payload.parent_id:
+            parent = db.query(Supplier).filter(
+                Supplier.id == payload.parent_id
+            ).first()
+
+            if not parent:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Parent supplier not found"
+                )
+        # create new supplier
         supplier = Supplier(**payload.dict())
+        if supplier.parent_id and supplier.parent_id == supplier.id:
+            raise HTTPException(
+                status_code=400,
+                detail="Supplier cannot be its own parent"
+            )
         db.add(supplier)
         db.commit()
         db.refresh(supplier)
@@ -26,6 +46,12 @@ def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[SupplierRead])
 def list_suppliers(db: Session = Depends(get_db)):
     return db.query(Supplier).all()
+
+
+@router.get("/suppliers/{supplier_id}/enterprise-rollup")
+def enterprise_rollup(supplier_id: str, db: Session = Depends(get_db)):
+    return get_supplier_tree_rollup(db, supplier_id)
+
 
 
 @router.delete("/{supplier_id}")
