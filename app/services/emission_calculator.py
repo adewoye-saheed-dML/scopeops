@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.spend import SpendRecord
 from app.models.supplier import Supplier
 from app.models.emission_factors import EmissionFactor
+from decimal import Decimal, InvalidOperation
 from app.models.category_factor_mapping import CategoryFactorMapping  # <--- Import this!
 
 def calculate_emissions(db: Session):
@@ -68,9 +69,8 @@ def calculate_emissions(db: Session):
         # Deterministic calculation
         # ------------------------
         try:
-            # Ensure we are using floats/decimals for calculation
-            spend_amount = float(record.spend_amount)
-            intensity = float(factor.co2e_per_currency)
+            spend_amount = Decimal(record.spend_amount)
+            intensity = Decimal(factor.co2e_per_currency)
             
             record.calculated_co2e = spend_amount * intensity
             record.factor_used_id = factor.id
@@ -78,9 +78,8 @@ def calculate_emissions(db: Session):
             record.calculation_method = method
             
             updated += 1
-        except (ValueError, TypeError):
-            # Log error or handle cases where conversion fails
-            continue
+        except (ValueError, TypeError, InvalidOperation):
+           continue
 
     db.commit()
     return updated

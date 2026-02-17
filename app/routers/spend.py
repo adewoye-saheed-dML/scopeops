@@ -6,13 +6,16 @@ from app.database import get_db
 from app.models.spend import SpendRecord
 from app.schemas.spend import SpendCreate, SpendRead
 from app.services.emission_calculator import calculate_emissions
+from app.routers.auth import get_current_user, User
+
+
 
 router = APIRouter(prefix="/spend", tags=["Spend"])
 
 
-
 @router.post("/", response_model=SpendRead)
-def create_spend(payload: SpendCreate, db: Session = Depends(get_db)):
+def create_spend(payload: SpendCreate, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
     try:
         record = SpendRecord(**payload.dict())
         db.add(record)
@@ -35,14 +38,16 @@ def create_spend(payload: SpendCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/calculate", response_model=dict)
-def run_batch_calculation(db: Session = Depends(get_db)):
+def run_batch_calculation(db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
     updated = calculate_emissions(db)
     return {"records_updated": updated}
 
 
 
 @router.get("/summary", response_model=dict)
-def spend_summary(db: Session = Depends(get_db)):
+def spend_summary(db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user)):
 
     total_spend = db.query(
         func.coalesce(func.sum(SpendRecord.spend_amount), 0)
@@ -73,7 +78,8 @@ def spend_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/coverage", response_model=dict)
-def spend_coverage(db: Session = Depends(get_db)):
+def spend_coverage(db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
 
     total_spend = db.query(
         func.coalesce(func.sum(SpendRecord.spend_amount), 0)

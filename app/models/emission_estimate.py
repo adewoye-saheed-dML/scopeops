@@ -1,5 +1,3 @@
-# app/models/emission_estimate.py
-
 from sqlalchemy import Integer, Numeric, String, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
@@ -15,7 +13,7 @@ class EmissionEstimate(Base):
 
     supplier_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("suppliers.id"),
+        ForeignKey("suppliers.id", ondelete="CASCADE"),
         nullable=False
     )
 

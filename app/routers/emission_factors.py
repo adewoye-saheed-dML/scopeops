@@ -4,12 +4,15 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.emission_factors import EmissionFactor
 from app.schemas.emission_factors import EmissionFactorCreate
+from app.routers.auth import get_current_user, User
+
 
 router = APIRouter(prefix="/emission-factors", tags=["Emission Factors"])
 
 
 @router.post("/")
-def create_factor(payload: EmissionFactorCreate, db: Session = Depends(get_db)):
+def create_factor(payload: EmissionFactorCreate, db: Session = Depends(get_db),
+                  current_user: User = Depends(get_current_user)):
     try:
         factor = EmissionFactor(**payload.dict())
         db.add(factor)
@@ -22,5 +25,6 @@ def create_factor(payload: EmissionFactorCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-def list_factors(db: Session = Depends(get_db)):
+def list_factors(db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_user)):
     return db.query(EmissionFactor).all()

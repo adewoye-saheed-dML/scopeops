@@ -60,12 +60,14 @@ def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db),
 
 
 @router.get("/", response_model=list[SupplierRead])
-def list_suppliers(db: Session = Depends(get_db)):
+def list_suppliers(db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
     return db.query(Supplier).all()
 
 
 @router.get("/suppliers/{supplier_id}/enterprise-rollup")
-def enterprise_rollup(supplier_id: str, db: Session = Depends(get_db)):
+def enterprise_rollup(supplier_id: str, db: Session = Depends(get_db),
+                      current_user: User = Depends(get_current_user)):
     return get_supplier_tree_rollup(db, supplier_id)
 
 
@@ -131,7 +133,8 @@ def update_supplier(
 
 
 @router.delete("/{supplier_id}")
-def delete_supplier(supplier_id: str, db: Session = Depends(get_db)):
+def delete_supplier(supplier_id: str, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")

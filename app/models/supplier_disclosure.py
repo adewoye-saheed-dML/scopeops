@@ -1,5 +1,3 @@
-# app/models/supplier_disclosure.py
-
 from sqlalchemy import String, Numeric, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -19,7 +17,7 @@ class SupplierDisclosure(Base):
 
     supplier_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("suppliers.id"),
+        ForeignKey("suppliers.id", ondelete="CASCADE"),
         nullable=False
     )
 
