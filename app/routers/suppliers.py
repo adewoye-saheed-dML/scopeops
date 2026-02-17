@@ -65,7 +65,7 @@ def list_suppliers(db: Session = Depends(get_db),
     return db.query(Supplier).all()
 
 
-@router.get("/suppliers/{supplier_id}/enterprise-rollup")
+@router.get("/{supplier_id}/enterprise-rollup")
 def enterprise_rollup(supplier_id: str, db: Session = Depends(get_db),
                       current_user: User = Depends(get_current_user)):
     return get_supplier_tree_rollup(db, supplier_id)

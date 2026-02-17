@@ -2,6 +2,7 @@ import os
 import requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
@@ -34,20 +35,17 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 @router.post("/login", response_model=Token)
-def login(form_data: UserLogin, db: Session = Depends(get_db)):
-    # Check user exists
-    user = db.query(User).filter(User.email == form_data.email).first()
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == form_data.username).first()
+    
     if not user or not user.hashed_password:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
-    # Verify password
     if not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     
-    # Generate Token
     access_token = create_access_token(data={"sub": user.email})
     return {"access_token": access_token, "token_type": "bearer"}
-
 
 
 # --- Google Auth ---
