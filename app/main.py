@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.responses import RedirectResponse
 from app.database import Base, engine, get_db
 from app.routers import suppliers, spend, emission_factors,auth
 from sqlalchemy import text
@@ -12,6 +13,11 @@ app.include_router(suppliers.router)
 app.include_router(spend.router)
 app.include_router(emission_factors.router)
 app.include_router(auth.router)
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/docs")
 
 @app.get("/health/db")
 def db_health_check(db = Depends(get_db)):
