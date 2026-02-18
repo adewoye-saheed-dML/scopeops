@@ -1,6 +1,6 @@
 from rapidfuzz import process
 from sqlalchemy.orm import Session
-from app.models.emission_factors import EmissionFactor  # Fixed import path (removed scopeops.)
+from app.models.emission_factors import EmissionFactor
 from app.models.supplier import Supplier
 from datetime import datetime
 from app.config.verified_suppliers import VERIFIED_SUPPLIERS
@@ -12,18 +12,29 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
     Assigns a resolved emission factor to a supplier.
 
     Priority:
-    1. Use verified supplier disclosures if available.
+    1. Use verified supplier disclosures if available (checks domain first, then name).
     2. Fuzzy match the supplier's industry to DitchCarbon emission factors.
     """
-    # Check for verified supplier overrides
-    # (Ensure we handle NoneType for supplier_name safely)
-    if not supplier.supplier_name:
-        return None
-        
-    key = supplier.supplier_name.lower().strip() # Added strip() for safety
     
-    if key in VERIFIED_SUPPLIERS:
-        data = VERIFIED_SUPPLIERS[key]
+    # ---------------------------------------------------------
+    # 1. Check for Verified Supplier Overrides
+    # ---------------------------------------------------------
+    match_key = None
+
+    # Priority A: Check by Domain (Exact match usually)
+    if supplier.domain:
+        domain_key = supplier.domain.lower().strip()
+        if domain_key in VERIFIED_SUPPLIERS:
+            match_key = domain_key
+
+    # Priority B: Check by Name (if domain didn't match)
+    if not match_key and supplier.supplier_name:
+        name_key = supplier.supplier_name.lower().strip()
+        if name_key in VERIFIED_SUPPLIERS:
+            match_key = name_key
+    
+    if match_key:
+        data = VERIFIED_SUPPLIERS[match_key]
 
         # Check if factor already exists in emission_factors
         factor = (
@@ -44,25 +55,25 @@ def resolve_supplier_factor(db: Session, supplier: Supplier):
                 name=data["name"],
                 geography="Global",
                 year=data["year"],
-                # Ensure float division
                 co2e_per_currency=(float(data["scope_1"] + data["scope_2"] + data["scope_3"]) / float(data["revenue"])),
                 source_url=None,
                 methodology="Direct corporate disclosure override",
                 version="1.0",
+                owner_id=supplier.owner_id  
             )
             db.add(factor)
             db.commit()
             db.refresh(factor)
 
-        # Assign factor to supplier and lock timestamp
+        # Assign factor to supplier
         supplier.resolved_factor_id = factor.id
-        # supplier.factor_locked_at = datetime.utcnow() # Note: This field is missing in your Supplier model!
-        # If 'factor_locked_at' is not in your model, remove the line above.
         
         db.commit()
         return factor
 
-    # Fallback to fuzzy industry match if no verified supplier data
+    # ---------------------------------------------------------
+    # 2. Fallback to Fuzzy Industry Match
+    # ---------------------------------------------------------
     # Use industry_locked instead of industry_name (based on your Supplier model)
     if not supplier.industry_locked:
         return None

@@ -10,3 +10,5 @@ python-dotenv
 rapidfuzz
 requests
 email-validator
+pytest
+httpx
