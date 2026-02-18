@@ -1,45 +1,47 @@
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.supplier import Supplier
-from app.schemas.supplier import SupplierCreate, SupplierRead
+from app.schemas.supplier import SupplierCreate, SupplierRead, SupplierUpdate
 from app.routers.auth import get_current_user, User
 from app.services.tree_rollup import get_supplier_tree_rollup
 from app.services.parent_child_circular import creates_cycle
-from app.schemas.supplier import SupplierUpdate
 from uuid import UUID
-
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 
-
 @router.post("/", response_model=SupplierRead)
-def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+def create_supplier(
+    payload: SupplierCreate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     try:
-        # Validate parent_id if provided
+        # Validate parent_id if provided 
         if payload.parent_id:
             parent = db.query(Supplier).filter(
-                Supplier.id == payload.parent_id
+                Supplier.id == payload.parent_id,
+                Supplier.owner_id == current_user.id
             ).first()
 
             if not parent:
                 raise HTTPException(
                     status_code=400,
-                    detail="Parent supplier not found"
+                    detail="Parent supplier not found or access denied"
                 )
-        # create new supplier
-        supplier = Supplier(**payload.dict())
 
-        # prevent self-parenting
+        # Create new supplier with owner_id
+        supplier = Supplier(**payload.dict(), owner_id=current_user.id)
+
+        # Prevent self-parenting
         if supplier.parent_id and supplier.parent_id == supplier.id:
             raise HTTPException(
                 status_code=400,
                 detail="Supplier cannot be its own parent"
             )
-        # prevent circular dependency
+
+        # Prevent circular dependency
         if supplier.parent_id and creates_cycle(
             db,
             child_id=supplier.id,
@@ -54,22 +56,37 @@ def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db),
         db.commit()
         db.refresh(supplier)
         return supplier
+        
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="Supplier already exists")
 
 
 @router.get("/", response_model=list[SupplierRead])
-def list_suppliers(db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
-    return db.query(Supplier).all()
+def list_suppliers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # List only your suppliers
+    return db.query(Supplier).filter(Supplier.owner_id == current_user.id).all()
 
 
 @router.get("/{supplier_id}/enterprise-rollup")
-def enterprise_rollup(supplier_id: str, db: Session = Depends(get_db),
-                      current_user: User = Depends(get_current_user)):
+def enterprise_rollup(
+    supplier_id: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Check existence and ownership before calculating
+    supplier = db.query(Supplier).filter(
+        Supplier.id == supplier_id,
+        Supplier.owner_id == current_user.id
+    ).first()
+    
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+        
     return get_supplier_tree_rollup(db, supplier_id)
-
 
 
 @router.patch("/{supplier_id}", response_model=SupplierRead)
@@ -79,8 +96,10 @@ def update_supplier(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Fetch only if owned by user
     supplier = db.query(Supplier).filter(
-        Supplier.id == supplier_id
+        Supplier.id == supplier_id,
+        Supplier.owner_id == current_user.id
     ).first()
 
     if not supplier:
@@ -88,14 +107,12 @@ def update_supplier(
 
     update_data = payload.dict(exclude_unset=True)
 
-
     # Parent Validation (if updating)
     if "parent_id" in update_data:
         new_parent_id = update_data["parent_id"]
 
         # Allow removing parent
         if new_parent_id is not None:
-
             # Prevent self-parent
             if new_parent_id == supplier.id:
                 raise HTTPException(
@@ -103,15 +120,16 @@ def update_supplier(
                     detail="Supplier cannot be its own parent"
                 )
 
-            # Parent must exist
+            # Parent must exist AND belong to user
             parent = db.query(Supplier).filter(
-                Supplier.id == new_parent_id
+                Supplier.id == new_parent_id,
+                Supplier.owner_id == current_user.id 
             ).first()
 
             if not parent:
                 raise HTTPException(
                     status_code=400,
-                    detail="Parent supplier not found"
+                    detail="Parent supplier not found or access denied"
                 )
 
             # Prevent circular dependency
@@ -131,11 +149,18 @@ def update_supplier(
     return supplier
 
 
-
 @router.delete("/{supplier_id}")
-def delete_supplier(supplier_id: str, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
-    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+def delete_supplier(
+    supplier_id: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Delete only if owned by user
+    supplier = db.query(Supplier).filter(
+        Supplier.id == supplier_id,
+        Supplier.owner_id == current_user.id
+    ).first()
+    
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
 

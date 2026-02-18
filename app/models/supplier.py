@@ -58,7 +58,12 @@ class Supplier(Base):
         backref="children"
     )
 
-
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"), # If user is deleted, delete their data
+        nullable=False
+    )
+    
     resolved_factor = relationship("EmissionFactor")
     disclosures = relationship("SupplierDisclosure", back_populates="supplier")
 

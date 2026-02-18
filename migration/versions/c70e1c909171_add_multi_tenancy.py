@@ -1,8 +1,8 @@
-"""initial_migration_fixed
+"""add_multi_tenancy
 
-Revision ID: 0806eb95629e
+Revision ID: c70e1c909171
 Revises: 
-Create Date: 2026-02-16 10:53:28.153303
+Create Date: 2026-02-17 23:10:17.009610
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0806eb95629e'
+revision: str = 'c70e1c909171'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,6 +27,18 @@ def upgrade() -> None:
     sa.Column('parent_category_id', sa.String(), nullable=True),
     sa.PrimaryKeyConstraint('category_id')
     )
+    op.create_table('users',
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('email', sa.String(), nullable=False),
+    sa.Column('full_name', sa.String(), nullable=True),
+    sa.Column('hashed_password', sa.String(), nullable=True),
+    sa.Column('provider', sa.String(), nullable=False),
+    sa.Column('picture', sa.String(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_table('emission_factors',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('external_id', sa.String(), nullable=True),
@@ -34,11 +46,13 @@ def upgrade() -> None:
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('geography', sa.String(), nullable=False),
     sa.Column('year', sa.Integer(), nullable=False),
-    sa.Column('co2e_per_currency', sa.Numeric(), nullable=False),
+    sa.Column('co2e_per_currency', sa.Numeric(precision=10, scale=5), nullable=False),
     sa.Column('source_url', sa.String(), nullable=True),
     sa.Column('methodology', sa.String(), nullable=True),
     sa.Column('version', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('owner_id', sa.UUID(), nullable=False),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_emission_factors_external_id'), 'emission_factors', ['external_id'], unique=False)
@@ -65,6 +79,10 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
     sa.Column('resolved_factor_id', sa.UUID(), nullable=True),
+    sa.Column('parent_id', sa.UUID(), nullable=True),
+    sa.Column('owner_id', sa.UUID(), nullable=False),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['parent_id'], ['suppliers.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['resolved_factor_id'], ['emission_factors.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -77,23 +95,27 @@ def upgrade() -> None:
     sa.Column('calculation_method', sa.String(), nullable=False),
     sa.Column('calculation_version', sa.String(), nullable=False),
     sa.Column('run_timestamp', sa.DateTime(), nullable=False),
+    sa.Column('owner_id', sa.UUID(), nullable=False),
     sa.ForeignKeyConstraint(['emission_factor_id'], ['emission_factors.id'], ),
-    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('spend_records',
     sa.Column('spend_id', sa.Integer(), nullable=False),
     sa.Column('supplier_id', sa.UUID(), nullable=False),
     sa.Column('category_code', sa.String(), nullable=False),
-    sa.Column('spend_amount', sa.Numeric(), nullable=False),
+    sa.Column('spend_amount', sa.Numeric(precision=14, scale=2), nullable=False),
     sa.Column('currency', sa.String(), nullable=False),
     sa.Column('fiscal_year', sa.Integer(), nullable=False),
-    sa.Column('calculated_co2e', sa.Numeric(), nullable=True),
+    sa.Column('calculated_co2e', sa.Numeric(precision=14, scale=4), nullable=True),
     sa.Column('factor_used_id', sa.UUID(), nullable=True),
     sa.Column('calculated_at', sa.DateTime(), nullable=True),
     sa.Column('calculation_method', sa.String(), nullable=True),
+    sa.Column('owner_id', sa.UUID(), nullable=False),
     sa.ForeignKeyConstraint(['factor_used_id'], ['emission_factors.id'], ),
-    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('spend_id')
     )
     op.create_table('supplier_disclosures',
@@ -108,7 +130,9 @@ def upgrade() -> None:
     sa.Column('assurance_level', sa.String(), nullable=True),
     sa.Column('source_url', sa.String(), nullable=True),
     sa.Column('ingested_at', sa.DateTime(), nullable=False),
-    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ),
+    sa.Column('owner_id', sa.UUID(), nullable=False),
+    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['supplier_id'], ['suppliers.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     # ### end Alembic commands ###
@@ -124,5 +148,7 @@ def downgrade() -> None:
     op.drop_table('category_factor_mapping')
     op.drop_index(op.f('ix_emission_factors_external_id'), table_name='emission_factors')
     op.drop_table('emission_factors')
+    op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_table('users')
     op.drop_table('categories')
     # ### end Alembic commands ###

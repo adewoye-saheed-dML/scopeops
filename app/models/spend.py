@@ -40,3 +40,9 @@ class SpendRecord(Base):
         String,
         nullable=True
     )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )

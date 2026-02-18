@@ -35,3 +35,9 @@ class EmissionEstimate(Base):
         DateTime,
         default=datetime.utcnow
     )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )
