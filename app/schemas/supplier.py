@@ -24,3 +24,12 @@ class SupplierRead(SupplierBase):
 
     class Config:
         from_attributes = True
+
+
+class SupplierUpdate(BaseModel):
+    supplier_name: Optional[str] = None
+    domain: Optional[str] = None
+    industry_locked: Optional[str] = None
+    region: Optional[str] = None
+    sbti_status: Optional[str] = None
+    parent_id: Optional[UUID] = None
