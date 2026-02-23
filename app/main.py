@@ -4,12 +4,12 @@ from app.database import Base, engine, get_db
 from app.routers import suppliers, spend, emission_factors,auth
 from sqlalchemy import text
 from app.scripts.seed_categories import seed_categories
-from app.scripts.seed_ditchcarbon_factors import seed_ditchcarbon_factors
+from app.scripts.seed_ditchcarbon_factors import  seed_ditchcarbon_factors
 from app.scripts.seed_epa_factors import seed_epa_factors
 from app.routers.auth import get_current_user, User
 import app.models
 
-
+ 
 
 app = FastAPI(title="Procurement Carbon Engine")
 
