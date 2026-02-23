@@ -22,7 +22,7 @@ VERIFIED_SUPPLIERS = {
         "scope_1": 50_000_000,
         "scope_2": 8_000_000,
         "scope_3": 1_084_000_000,
-        "revenue": 286_500_000_000,  # approx mid of 284-289B
+        "revenue": 286_500_000_000,  
         "year": 2024,
         "scope_3_categories_disclosed": [1, 3, 11, 12],
     },

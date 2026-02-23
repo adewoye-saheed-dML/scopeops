@@ -17,7 +17,6 @@ def create_spend(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Verify supplier belongs to the user
     supplier = db.query(Supplier).filter(
         Supplier.id == payload.supplier_id, 
         Supplier.owner_id == current_user.id
@@ -30,7 +29,6 @@ def create_spend(
         )
         
     try:
-        # Create record attached to the user
         record = SpendRecord(**payload.dict(), owner_id=current_user.id)
         db.add(record)
         db.commit()
@@ -54,9 +52,6 @@ def run_batch_calculation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Trigger calculation 
-    # NOTE: Ideally 'calculate_emissions' should also accept 'current_user.id' 
-    # to filter only one user's data. If it doesn't, this might calculate everyone's.
     updated = calculate_emissions(db) 
     return {"records_updated": updated}
 
@@ -65,15 +60,30 @@ def spend_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Filter by owner_id
+    # Financial Totals
     total_spend = db.query(
         func.coalesce(func.sum(SpendRecord.spend_amount), 0)
     ).filter(SpendRecord.owner_id == current_user.id).scalar()
 
+    # Emission Totals
     total_emissions = db.query(
         func.coalesce(func.sum(SpendRecord.calculated_co2e), 0)
     ).filter(SpendRecord.owner_id == current_user.id).scalar()
 
+    # --- Scope Breakdowns ---
+    total_scope_1 = db.query(
+        func.coalesce(func.sum(SpendRecord.calculated_scope_1), 0)
+    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+    
+    total_scope_2 = db.query(
+        func.coalesce(func.sum(SpendRecord.calculated_scope_2), 0)
+    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+    
+    total_scope_3 = db.query(
+        func.coalesce(func.sum(SpendRecord.calculated_scope_3), 0)
+    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+
+    # Record Tracking
     records_calculated = db.query(SpendRecord).filter(
         SpendRecord.calculated_co2e != None,
         SpendRecord.owner_id == current_user.id
@@ -89,6 +99,9 @@ def spend_summary(
     return {
         "total_spend": float(total_spend),
         "total_emissions": float(total_emissions),
+        "total_scope_1": float(total_scope_1),
+        "total_scope_2": float(total_scope_2),
+        "total_scope_3": float(total_scope_3),
         "emission_intensity": emission_intensity,
         "records_calculated": records_calculated,
         "records_uncalculated": records_uncalculated
@@ -99,7 +112,6 @@ def spend_coverage(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Filter by owner_id
     total_spend = db.query(
         func.coalesce(func.sum(SpendRecord.spend_amount), 0)
     ).filter(SpendRecord.owner_id == current_user.id).scalar()

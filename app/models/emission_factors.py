@@ -11,9 +11,7 @@ class EmissionFactor(Base):
     __tablename__ = "emission_factors"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
     external_id: Mapped[str] = mapped_column(String, nullable=True, index=True)
@@ -23,19 +21,27 @@ class EmissionFactor(Base):
     geography: Mapped[str] = mapped_column(String, nullable=False)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    co2e_per_currency: Mapped[Decimal] = mapped_column(Numeric(10, 5), nullable=False)
+
+    
+    unit_of_measure: Mapped[str] = mapped_column(String, default="USD", nullable=False)
+    
+   
+    co2e_per_unit: Mapped[Decimal] = mapped_column(Numeric(14, 5), nullable=False)
+
+    
+    scope_1_intensity: Mapped[Decimal] = mapped_column(Numeric(14, 5), nullable=True)
+    scope_2_intensity: Mapped[Decimal] = mapped_column(Numeric(14, 5), nullable=True)
+    scope_3_intensity: Mapped[Decimal] = mapped_column(Numeric(14, 5), nullable=True)
+
 
     source_url: Mapped[str] = mapped_column(String, nullable=True)
     methodology: Mapped[str] = mapped_column(String, nullable=True)
     version: Mapped[str] = mapped_column(String, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow
+        DateTime, default=datetime.utcnow
     )
 
     owner_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )

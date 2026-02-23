@@ -1,8 +1,8 @@
-"""add_multi_tenancy
+"""initial_schema_with_hybrid_activity
 
-Revision ID: c70e1c909171
+Revision ID: ccadf6042789
 Revises: 
-Create Date: 2026-02-17 23:10:17.009610
+Create Date: 2026-02-22 03:00:56.015030
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'c70e1c909171'
+revision: str = 'ccadf6042789'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -46,7 +46,11 @@ def upgrade() -> None:
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('geography', sa.String(), nullable=False),
     sa.Column('year', sa.Integer(), nullable=False),
-    sa.Column('co2e_per_currency', sa.Numeric(precision=10, scale=5), nullable=False),
+    sa.Column('unit_of_measure', sa.String(), nullable=False),
+    sa.Column('co2e_per_unit', sa.Numeric(precision=14, scale=5), nullable=False),
+    sa.Column('scope_1_intensity', sa.Numeric(precision=14, scale=5), nullable=True),
+    sa.Column('scope_2_intensity', sa.Numeric(precision=14, scale=5), nullable=True),
+    sa.Column('scope_3_intensity', sa.Numeric(precision=14, scale=5), nullable=True),
     sa.Column('source_url', sa.String(), nullable=True),
     sa.Column('methodology', sa.String(), nullable=True),
     sa.Column('version', sa.String(), nullable=False),
@@ -105,10 +109,16 @@ def upgrade() -> None:
     sa.Column('spend_id', sa.Integer(), nullable=False),
     sa.Column('supplier_id', sa.UUID(), nullable=False),
     sa.Column('category_code', sa.String(), nullable=False),
-    sa.Column('spend_amount', sa.Numeric(precision=14, scale=2), nullable=False),
-    sa.Column('currency', sa.String(), nullable=False),
     sa.Column('fiscal_year', sa.Integer(), nullable=False),
+    sa.Column('spend_amount', sa.Numeric(precision=14, scale=2), nullable=True),
+    sa.Column('currency', sa.String(), nullable=True),
+    sa.Column('quantity', sa.Numeric(precision=14, scale=4), nullable=True),
+    sa.Column('unit_of_measure', sa.String(), nullable=True),
+    sa.Column('material_type', sa.String(), nullable=True),
     sa.Column('calculated_co2e', sa.Numeric(precision=14, scale=4), nullable=True),
+    sa.Column('calculated_scope_1', sa.Numeric(precision=14, scale=4), nullable=True),
+    sa.Column('calculated_scope_2', sa.Numeric(precision=14, scale=4), nullable=True),
+    sa.Column('calculated_scope_3', sa.Numeric(precision=14, scale=4), nullable=True),
     sa.Column('factor_used_id', sa.UUID(), nullable=True),
     sa.Column('calculated_at', sa.DateTime(), nullable=True),
     sa.Column('calculation_method', sa.String(), nullable=True),
