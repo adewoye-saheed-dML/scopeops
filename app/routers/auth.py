@@ -35,6 +35,15 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise credentials_exception
     return user
 
+def get_admin_user(current_user: User = Depends(get_current_user)):
+    """Dependency that ensures the current user is an admin."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to perform this action."
+        )
+    return current_user
+
 
 # --- Local Auth ---
 

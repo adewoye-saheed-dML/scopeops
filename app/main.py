@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.scripts.seed_categories import seed_categories
 from app.scripts.seed_ditchcarbon_factors import  seed_ditchcarbon_factors
 from app.scripts.seed_epa_factors import seed_epa_factors
-from app.routers.auth import get_current_user, User
+from app.routers.auth import get_current_user, get_admin_user,User
 import app.models
 
  
@@ -24,10 +24,10 @@ def root():
     return RedirectResponse(url="/docs")
 
 @app.post("/admin/seed-database", tags=["Admin"])
-def trigger_database_seed(current_user: User = Depends(get_current_user)):
+def trigger_database_seed(admin_user: User = Depends(get_admin_user)):
     """
     Trigger this endpoint ONCE on the live server to populate the database.
-    (In a production app, you would add an 'is_admin' check here).
+    Strictly protected: Only users with is_admin=True can access this.
     """
     try:
         seed_categories()

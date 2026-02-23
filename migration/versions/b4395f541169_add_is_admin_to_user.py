@@ -1,8 +1,8 @@
-"""initial_schema_with_hybrid_activity
+"""add_is_admin_to_user
 
-Revision ID: ccadf6042789
+Revision ID: b4395f541169
 Revises: 
-Create Date: 2026-02-22 03:00:56.015030
+Create Date: 2026-02-23 14:18:01.390663
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'ccadf6042789'
+revision: str = 'b4395f541169'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -35,6 +35,7 @@ def upgrade() -> None:
     sa.Column('provider', sa.String(), nullable=False),
     sa.Column('picture', sa.String(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('is_admin', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
