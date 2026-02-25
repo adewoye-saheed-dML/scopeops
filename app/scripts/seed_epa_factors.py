@@ -26,7 +26,7 @@ def parse_epa_excel(file_path: str):
     current_table = None
 
     print(f"Loading Excel file: {file_path} (This may take a few seconds...)")
-    # data_only=True ensures we read the calculated values, not the Excel formulas
+    
     wb = openpyxl.load_workbook(file_path, data_only=True)
     
     # Intelligently find the main data sheet, or fallback to the active one
@@ -38,10 +38,9 @@ def parse_epa_excel(file_path: str):
     sheet = wb[sheet_name] if sheet_name else wb.active
     
     for row in sheet.iter_rows(values_only=True):
-        # Convert cells to string, replace None with ""
-        r = [str(cell).strip() if cell is not None else "" for cell in row]
         
-        # Combine row into a single string for easy searching
+        r = [str(cell).strip() if cell is not None else "" for cell in row]
+    
         row_text = " ".join(r).strip()
         
         if not row_text:
@@ -55,7 +54,7 @@ def parse_epa_excel(file_path: str):
             current_table = "waste"
             continue
         elif "Table " in row_text:
-            current_table = None # Skip other tables
+            current_table = None 
             continue
             
         # --- PARSE TABLE 6: ELECTRICITY (eGRID Subregions) ---
@@ -64,7 +63,7 @@ def parse_epa_excel(file_path: str):
                 current_table = None
                 continue
             
-            # Because of Excel formatting, the acronym is pushed to index 2
+            
             if len(r) > 6:
                 acronym = r[2]
                 if len(acronym) == 4 or acronym == "US Average":
@@ -104,9 +103,8 @@ def parse_epa_excel(file_path: str):
             if len(r) > 4:
                 material_name = r[2]
                 
-                # Check if it's a valid material row
+                
                 if material_name and material_name not in ["Material", "Metric Tons CO2e / Short Ton Material"]:
-                    # Because of formatting, landfilled is index 4
                     landfilled_val = r[4] 
                     
                     if landfilled_val and landfilled_val not in ["NA", ""]:
@@ -147,7 +145,6 @@ def seed_epa_factors():
         added_count = 0
 
         for factor_data in parsed_factors:
-            # Idempotency check: Don't duplicate if we already seeded it
             exists = session.query(EmissionFactor).filter_by(
                 external_id=factor_data["external_id"],
                 year=factor_data["year"]
