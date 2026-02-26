@@ -1,13 +1,15 @@
 import os
 import requests
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from jose import jwt, JWTError
+
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import UserCreate, UserLogin, Token, UserRead
 from app.services.security import verify_password, get_password_hash, create_access_token, SECRET_KEY, ALGORITHM
-from jose import jwt, JWTError
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -79,14 +81,49 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-
-
 # --- Google Auth ---
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
+
+class GoogleToken(BaseModel):
+    token: str
+
+@router.post("/google/", response_model=Token)
+def google_login_direct(payload: GoogleToken, db: Session = Depends(get_db)):
+    # 1. Ask Google for the user's info using the token React sent us
+    user_info_res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token={payload.token}")
+    
+    if user_info_res.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to retrieve user info from Google")
+    
+    user_info = user_info_res.json()
+    email = user_info.get("email")
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="No email provided by Google")
+    
+    # 2. Check if the user already exists in our database
+    user = db.query(User).filter(User.email == email).first()
+    
+    # 3. If they don't exist, create an account for them automatically
+    if not user:
+        user = User(
+            email=email,
+            full_name=user_info.get("name"),
+            picture=user_info.get("picture"),
+            provider="google",
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # 4. Generate our own backend JWT token and send it back to React
+    access_token = create_access_token(data={"sub": user.email})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/google/url")
 def google_login_url():
@@ -111,7 +148,6 @@ def google_auth_callback(code: str, db: Session = Depends(get_db)):
     
     tokens = res.json()
     
-   
     user_info_res = requests.get(f"https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token={tokens['access_token']}")
     user_info = user_info_res.json()
     
