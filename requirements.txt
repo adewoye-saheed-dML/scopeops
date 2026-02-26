@@ -13,3 +13,4 @@ email-validator
 pytest
 httpx
 openpyxl
+python-multipart

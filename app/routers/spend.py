@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import csv
+import io
+from pydantic import ValidationError
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
@@ -46,6 +49,87 @@ def create_spend(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal Server Error"
         )
+
+@router.post("/bulk-upload", response_model=dict)
+async def bulk_upload_spend(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Validate file type
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are permitted.")
+
+    # Read and decode the file
+    content = await file.read()
+    try:
+        # utf-8-sig automatically handles the BOM (Byte Order Mark) if exported from Excel
+        text_content = content.decode("utf-8-sig") 
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid file encoding. Please upload a UTF-8 CSV.")
+
+    reader = csv.DictReader(io.StringIO(text_content))
+    
+    # Pre-fetch user's suppliers for fast, in-memory permission checking
+    user_suppliers = {str(s.id) for s in db.query(Supplier.id).filter(Supplier.owner_id == current_user.id).all()}
+
+    records_to_insert = []
+    errors = []
+    row_number = 1  
+
+    # Helper function to convert empty CSV strings to None
+    def clean_val(v):
+        return v.strip() if v and v.strip() else None
+
+   
+    for row in reader:
+        row_number += 1
+        
+        supplier_id = clean_val(row.get("supplier_id"))
+        if not supplier_id or supplier_id not in user_suppliers:
+            errors.append(f"Row {row_number}: Invalid or unauthorized supplier_id.")
+            continue
+
+        try:
+            # Leverage the existing Pydantic model to validate the row exactly like a normal POST
+            payload = SpendCreate(
+                supplier_id=supplier_id,
+                category_code=clean_val(row.get("category_code")),
+                fiscal_year=clean_val(row.get("fiscal_year")),
+                spend_amount=clean_val(row.get("spend_amount")),
+                currency=clean_val(row.get("currency")),
+                quantity=clean_val(row.get("quantity")),
+                unit_of_measure=clean_val(row.get("unit_of_measure")),
+                material_type=clean_val(row.get("material_type")),
+                factor_used_id=clean_val(row.get("factor_used_id"))
+            )
+            
+            records_to_insert.append(SpendRecord(**payload.dict(), owner_id=current_user.id))
+            
+        except ValidationError as e:
+            
+            error_msg = e.errors()[0]["msg"]
+            field = e.errors()[0]["loc"][0]
+            errors.append(f"Row {row_number}: Field '{field}' - {error_msg}")
+        except Exception as e:
+            errors.append(f"Row {row_number}: Unexpected error - {str(e)}")
+
+    # Bulk insert valid records
+    if records_to_insert:
+        try:
+            db.add_all(records_to_insert)
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Database integrity error during bulk insert.")
+
+    # Return a summary report
+    return {
+        "message": "Bulk upload processed",
+        "inserted_count": len(records_to_insert),
+        "error_count": len(errors),
+        "errors": errors[:50]  
+    }
 
 @router.post("/calculate", response_model=dict)
 def run_batch_calculation(
