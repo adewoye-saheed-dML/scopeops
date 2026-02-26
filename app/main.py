@@ -8,10 +8,24 @@ from app.scripts.seed_ditchcarbon_factors import  seed_ditchcarbon_factors
 from app.scripts.seed_epa_factors import seed_epa_factors
 from app.routers.auth import get_current_user, get_admin_user,User
 import app.models
+from fastapi.middleware.cors import CORSMiddleware
 
  
 
 app = FastAPI(title="Procurement Carbon Engine")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000"       
+        # "https://your-frontend-url.com" 
+    ], 
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"], 
+)
+
+
 
 app.include_router(suppliers.router)
 app.include_router(spend.router)
