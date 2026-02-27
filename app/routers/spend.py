@@ -1,5 +1,9 @@
 import csv
 import io
+import uuid
+import random
+from datetime import datetime
+from decimal import Decimal
 from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
@@ -81,7 +85,6 @@ async def bulk_upload_spend(
     def clean_val(v):
         return v.strip() if v and v.strip() else None
 
-   
     for row in reader:
         row_number += 1
         
@@ -107,7 +110,6 @@ async def bulk_upload_spend(
             records_to_insert.append(SpendRecord(**payload.dict(), owner_id=current_user.id))
             
         except ValidationError as e:
-            
             error_msg = e.errors()[0]["msg"]
             field = e.errors()[0]["loc"][0]
             errors.append(f"Row {row_number}: Field '{field}' - {error_msg}")
@@ -216,69 +218,69 @@ def spend_coverage(
     }
 
 
-
 @router.post("/seed-demo-data", response_model=dict)
 def seed_demo_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Prevent double-seeding if the user already has data
     existing_supplier = db.query(Supplier).filter(Supplier.owner_id == current_user.id).first()
     if existing_supplier:
         return {"message": "Demo data already exists for this user."}
 
-    supplier_defs = [
-        ("Amazon Web Services", "Cloud Infrastructure", "aws.amazon.com", "Global", True, "IT_INFRASTRUCTURE"),
-        ("FedEx Logistics", "Transportation", "fedex.com", "North America", False, "LOGISTICS_FREIGHT"),
-        ("Dell Technologies", "Hardware", "dell.com", "Global", True, "OFFICE_EQUIPMENT"),
-        ("WeWork", "Real Estate", "wework.com", "Global", False, "FACILITIES_RENT"),
+    # Create Realistic Suppliers
+    s1_id = uuid.uuid4()
+    s2_id = uuid.uuid4()
+    s3_id = uuid.uuid4()
+    s4_id = uuid.uuid4()
+
+    demo_suppliers = [
+        Supplier(id=s1_id, supplier_name="Amazon Web Services", industry_locked="Cloud Infrastructure", domain="aws.amazon.com", region="Global", has_disclosure=True, owner_id=current_user.id),
+        Supplier(id=s2_id, supplier_name="FedEx Logistics", industry_locked="Transportation", domain="fedex.com", region="North America", has_disclosure=False, owner_id=current_user.id),
+        Supplier(id=s3_id, supplier_name="Dell Technologies", industry_locked="Hardware", domain="dell.com", region="Global", has_disclosure=True, owner_id=current_user.id),
+        Supplier(id=s4_id, supplier_name="WeWork", industry_locked="Real Estate", domain="wework.com", region="Global", has_disclosure=False, owner_id=current_user.id)
+    ]
+    db.add_all(demo_suppliers)
+    db.flush() 
+
+    # Create Realistic Spend Records
+    demo_records = []
+    supplier_mapping = [
+        (s1_id, "IT_INFRASTRUCTURE"),
+        (s2_id, "LOGISTICS_FREIGHT"),
+        (s3_id, "OFFICE_EQUIPMENT"),
+        (s4_id, "FACILITIES_RENT")
     ]
 
-    suppliers = []
-    supplier_category_pairs = []
-    for name, industry, domain, region, has_disclosure, category in supplier_defs:
-        s = Supplier(
-            id=uuid.uuid4(),
-            supplier_name=name,
-            industry_locked=industry,
-            domain=domain,
-            region=region,
-            has_disclosure=has_disclosure,
-            owner_id=current_user.id,
-        )
-        suppliers.append(s)
-        supplier_category_pairs.append((s.id, category))
-
-    db.add_all(suppliers)
-    db.flush()
-
-    records = []
+    # Generate 15 random records to make the charts look good
     for _ in range(15):
-        supplier_id, category = random.choice(supplier_category_pairs)
+        sup_id, category = random.choice(supplier_mapping)
         spend = Decimal(random.randint(5000, 150000))
-        total_co2e = spend * Decimal(str(random.uniform(0.01, 0.05)))
-
-        scope1_ratio = Decimal(str(random.uniform(0.02, 0.08)))
-        scope2_ratio = Decimal(str(random.uniform(0.05, 0.15)))
-
-        scope_1 = total_co2e * scope1_ratio
-        scope_2 = total_co2e * scope2_ratio
-        scope_3 = total_co2e - scope_1 - scope_2
-
-        records.append(
+        
+        # Calculate total lump sum
+        co2e = spend * Decimal(random.uniform(0.01, 0.05)) 
+        
+        # Distribute realistically across scopes
+        scope_1 = co2e * Decimal(random.uniform(0.02, 0.08))  
+        scope_2 = co2e * Decimal(random.uniform(0.05, 0.15))  
+        scope_3 = co2e - scope_1 - scope_2                    
+        
+        demo_records.append(
             SpendRecord(
-                supplier_id=supplier_id,
+                supplier_id=sup_id,
                 category_code=category,
                 fiscal_year=datetime.utcnow().year,
                 spend_amount=spend,
                 currency="USD",
-                calculated_co2e=total_co2e,
+                calculated_co2e=co2e,
                 calculated_scope_1=scope_1,
                 calculated_scope_2=scope_2,
                 calculated_scope_3=scope_3,
-                owner_id=current_user.id,
+                owner_id=current_user.id
             )
         )
 
-    db.add_all(records)
+    db.add_all(demo_records)
     db.commit()
+
     return {"message": "Demo data successfully loaded"}
