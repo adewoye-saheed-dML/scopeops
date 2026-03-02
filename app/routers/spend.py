@@ -228,48 +228,44 @@ def seed_demo_data(
     if existing_supplier:
         return {"message": "Demo data already exists for this user."}
 
-    # Create realistic supplier
-    s1_id = uuid.uuid4()
+    # Create one supplier for all seeded records
+    amazon_supplier_id = uuid.uuid4()
+    amazon_supplier = Supplier(
+        id=amazon_supplier_id,
+        supplier_name="Amazon Web Services",
+        industry_locked="Cloud Infrastructure",
+        domain="aws.amazon.com",
+        region="Global",
+        has_disclosure=True,
+        owner_id=current_user.id
+    )
+    db.add(amazon_supplier)
+    db.flush()
 
-    demo_suppliers = [
-        Supplier(
-            id=s1_id,
-            supplier_name="Amazon Web Services",
-            industry_locked="Cloud Infrastructure",
-            domain="aws.amazon.com",
-            region="Global",
-            has_disclosure=True,
-            owner_id=current_user.id
-        )
-    ]
-    db.add_all(demo_suppliers)
-    db.flush() 
-
-    # Create realistic spend records
+    # Create realistic AWS spend records using a single supplier
     demo_records = []
-    supplier_mapping = [
-        (s1_id, "IT_INFRASTRUCTURE"),
-        (s1_id, "LOGISTICS_FREIGHT"),
-        (s1_id, "OFFICE_EQUIPMENT"),
-        (s1_id, "FACILITIES_RENT")
-    ]
+    category_profiles = {
+        "IT_INFRASTRUCTURE": (10000, 180000, 0.015, 0.04),
+        "CLOUD_COMPUTING": (8000, 160000, 0.01, 0.03),
+        "LOGISTICS": (5000, 90000, 0.025, 0.06),
+    }
 
-    # Generate 15 random records to make the charts look good
-    for _ in range(15):
-        sup_id, category = random.choice(supplier_mapping)
-        spend = Decimal(random.randint(5000, 150000))
-        
-        # Calculate total lump sum
-        co2e = spend * Decimal(random.uniform(0.01, 0.05)) 
-        
-        # Distribute realistically across scopes
-        scope_1 = co2e * Decimal(random.uniform(0.02, 0.08))  
-        scope_2 = co2e * Decimal(random.uniform(0.05, 0.15))  
-        scope_3 = co2e - scope_1 - scope_2                    
-        
+    record_count = random.randint(12, 15)
+    for _ in range(record_count):
+        category = random.choice(list(category_profiles.keys()))
+        min_spend, max_spend, min_factor, max_factor = category_profiles[category]
+
+        spend = Decimal(random.randint(min_spend, max_spend))
+        co2e = spend * Decimal(str(random.uniform(min_factor, max_factor)))
+
+        # Scope 3 should dominate for purchased goods/services-style spend
+        scope_1 = co2e * Decimal(str(random.uniform(0.01, 0.06)))
+        scope_2 = co2e * Decimal(str(random.uniform(0.04, 0.14)))
+        scope_3 = co2e - scope_1 - scope_2
+
         demo_records.append(
             SpendRecord(
-                supplier_id=sup_id,
+                supplier_id=amazon_supplier_id,
                 category_code=category,
                 fiscal_year=datetime.utcnow().year,
                 spend_amount=spend,
