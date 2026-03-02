@@ -228,28 +228,30 @@ def seed_demo_data(
     if existing_supplier:
         return {"message": "Demo data already exists for this user."}
 
-    # Create Realistic Suppliers
+    # Create realistic supplier
     s1_id = uuid.uuid4()
-    s2_id = uuid.uuid4()
-    s3_id = uuid.uuid4()
-    s4_id = uuid.uuid4()
 
     demo_suppliers = [
-        Supplier(id=s1_id, supplier_name="Amazon Web Services", industry_locked="Cloud Infrastructure", domain="aws.amazon.com", region="Global", has_disclosure=True, owner_id=current_user.id),
-        Supplier(id=s2_id, supplier_name="FedEx Logistics", industry_locked="Transportation", domain="fedex.com", region="North America", has_disclosure=False, owner_id=current_user.id),
-        Supplier(id=s3_id, supplier_name="Dell Technologies", industry_locked="Hardware", domain="dell.com", region="Global", has_disclosure=True, owner_id=current_user.id),
-        Supplier(id=s4_id, supplier_name="WeWork", industry_locked="Real Estate", domain="wework.com", region="Global", has_disclosure=False, owner_id=current_user.id)
+        Supplier(
+            id=s1_id,
+            supplier_name="Amazon Web Services",
+            industry_locked="Cloud Infrastructure",
+            domain="aws.amazon.com",
+            region="Global",
+            has_disclosure=True,
+            owner_id=current_user.id
+        )
     ]
     db.add_all(demo_suppliers)
     db.flush() 
 
-    # Create Realistic Spend Records
+    # Create realistic spend records
     demo_records = []
     supplier_mapping = [
         (s1_id, "IT_INFRASTRUCTURE"),
-        (s2_id, "LOGISTICS_FREIGHT"),
-        (s3_id, "OFFICE_EQUIPMENT"),
-        (s4_id, "FACILITIES_RENT")
+        (s1_id, "LOGISTICS_FREIGHT"),
+        (s1_id, "OFFICE_EQUIPMENT"),
+        (s1_id, "FACILITIES_RENT")
     ]
 
     # Generate 15 random records to make the charts look good
