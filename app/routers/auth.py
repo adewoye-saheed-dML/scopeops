@@ -81,6 +81,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@router.get("/me", response_model=UserRead)
+def get_current_user_profile(current_user: User = Depends(get_current_user)):
+    return current_user
 # --- Google Auth ---
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
