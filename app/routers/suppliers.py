@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
+from app.models.spend import SpendRecord
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierCreate, SupplierRead, SupplierUpdate
 from app.routers.auth import get_current_user, User
@@ -69,6 +71,28 @@ def list_suppliers(
 ):
     # List only your suppliers
     return db.query(Supplier).filter(Supplier.owner_id == current_user.id).all()
+
+@router.get("/dashboard-stats")
+def supplier_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    stats = db.query(
+        Supplier.id,
+        Supplier.supplier_name,
+        func.sum(SpendRecord.calculated_co2e).label("total_co2e")
+    ).outerjoin(
+        SpendRecord, Supplier.id == SpendRecord.supplier_id
+    ).filter(
+        Supplier.owner_id == current_user.id
+    ).group_by(
+        Supplier.id
+    ).all()
+
+    return [
+        {"id": str(s.id), "supplier_name": s.supplier_name, "total_co2e": s.total_co2e or 0}
+        for s in stats
+    ]
 
 
 @router.get("/{supplier_id}/enterprise-rollup")

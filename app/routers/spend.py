@@ -4,6 +4,7 @@ import uuid
 import random
 from datetime import datetime
 from decimal import Decimal
+from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
@@ -54,6 +55,19 @@ def create_spend(
             detail="Internal Server Error"
         )
 
+@router.get("/", response_model=list[SpendRead])
+def list_spend(
+    supplier_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(SpendRecord).filter(SpendRecord.owner_id == current_user.id)
+
+    if supplier_id:
+        query = query.filter(SpendRecord.supplier_id == supplier_id)
+
+    return query.all()
+
 @router.post("/bulk-upload", response_model=dict)
 async def bulk_upload_spend(
     file: UploadFile = File(...),
@@ -74,9 +88,6 @@ async def bulk_upload_spend(
 
     reader = csv.DictReader(io.StringIO(text_content))
     
-    # Pre-fetch user's suppliers for fast, in-memory permission checking
-    user_suppliers = {str(s.id) for s in db.query(Supplier.id).filter(Supplier.owner_id == current_user.id).all()}
-
     records_to_insert = []
     errors = []
     row_number = 1  
@@ -88,12 +99,35 @@ async def bulk_upload_spend(
     for row in reader:
         row_number += 1
         
-        supplier_id = clean_val(row.get("supplier_id"))
-        if not supplier_id or supplier_id not in user_suppliers:
-            errors.append(f"Row {row_number}: Invalid or unauthorized supplier_id.")
+        supplier_name = clean_val(row.get("supplier_name"))
+        if not supplier_name:
+            errors.append(f"Row {row_number}: Missing supplier_name.")
             continue
 
         try:
+            supplier = db.query(Supplier).filter(
+                Supplier.supplier_name == supplier_name,
+                Supplier.owner_id == current_user.id
+            ).first()
+
+            if not supplier:
+                try:
+                    supplier = Supplier(
+                        supplier_name=supplier_name,
+                        industry_locked="Unknown",
+                        owner_id=current_user.id,
+                        has_disclosure=False
+                    )
+                    db.add(supplier)
+                    db.commit()
+                    db.refresh(supplier)
+                except IntegrityError:
+                    db.rollback()
+                    errors.append(f"Row {row_number}: Supplier creation failed due to integrity error.")
+                    continue
+
+            supplier_id = str(supplier.id)
+
             # Leverage the existing Pydantic model to validate the row exactly like a normal POST
             payload = SpendCreate(
                 supplier_id=supplier_id,
