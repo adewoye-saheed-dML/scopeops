@@ -64,7 +64,12 @@ def list_spend(
     query = db.query(SpendRecord).filter(SpendRecord.owner_id == current_user.id)
 
     if supplier_id:
-        query = query.filter(SpendRecord.supplier_id == supplier_id)
+        try:
+            valid_uuid = uuid.UUID(supplier_id)
+            query = query.filter(SpendRecord.supplier_id == valid_uuid)
+        except ValueError:
+            # If the ID is not a valid UUID (e.g., "undefined" or "demo-1"), return an empty list safely
+            return []
 
     return query.all()
 
