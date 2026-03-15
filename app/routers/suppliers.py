@@ -89,10 +89,7 @@ def supplier_dashboard_stats(
         Supplier.id
     ).all()
 
-    return [
-        {"id": str(s.id), "supplier_name": s.supplier_name, "total_co2e": s.total_co2e or 0}
-        for s in stats
-    ]
+    return [{"id": str(s.id), "supplier_name": s.supplier_name, "total_co2e": s.total_co2e or 0} for s in stats]
 
 
 @router.get("/{supplier_id}/enterprise-rollup")
