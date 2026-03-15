@@ -59,6 +59,12 @@ def calculate_emissions(db: Session):
                 ).first()
                 method = "Category_Average"
 
+        # Priority 4: System Fallback
+        if not factor:
+            factor = db.query(EmissionFactor).first()
+            method = "System_Fallback"
+
+        # Final safety check: only skip if no factors exist at all
         if not factor:
             continue
         try:

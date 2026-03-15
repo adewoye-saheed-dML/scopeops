@@ -175,6 +175,30 @@ def run_batch_calculation(
     updated = calculate_emissions(db) 
     return {"records_updated": updated}
 
+@router.get("/activity", response_model=list[dict])
+def spend_activity(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    month_labels = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ]
+    activity_by_month = {i + 1: 0 for i in range(12)}
+
+    records = db.query(SpendRecord.created_at).filter(
+        SpendRecord.owner_id == current_user.id
+    ).all()
+
+    for (created_at,) in records:
+        if created_at:
+            activity_by_month[created_at.month] += 1
+
+    return [
+        {"month": month_labels[i - 1], "activity": activity_by_month[i]}
+        for i in range(1, 13)
+    ]
+
 @router.get("/summary", response_model=dict)
 def spend_summary(
     db: Session = Depends(get_db),
