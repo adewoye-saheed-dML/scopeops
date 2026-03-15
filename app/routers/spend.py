@@ -205,50 +205,47 @@ def spend_summary(
     current_user: User = Depends(get_current_user)
 ):
     # Financial Totals
-    total_spend = db.query(
-        func.coalesce(func.sum(SpendRecord.spend_amount), 0)
-    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+    total_spend = db.query(func.coalesce(func.sum(SpendRecord.spend_amount), 0)).filter(
+        SpendRecord.owner_id == current_user.id
+    ).scalar()
 
     # Emission Totals
-    total_emissions = db.query(
-        func.coalesce(func.sum(SpendRecord.calculated_co2e), 0)
-    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+    total_co2e = db.query(func.coalesce(func.sum(SpendRecord.calculated_co2e), 0)).filter(
+        SpendRecord.owner_id == current_user.id
+    ).scalar()
 
-    # --- Scope Breakdowns ---
-    total_scope_1 = db.query(
-        func.coalesce(func.sum(SpendRecord.calculated_scope_1), 0)
-    ).filter(SpendRecord.owner_id == current_user.id).scalar()
-    
-    total_scope_2 = db.query(
-        func.coalesce(func.sum(SpendRecord.calculated_scope_2), 0)
-    ).filter(SpendRecord.owner_id == current_user.id).scalar()
-    
-    total_scope_3 = db.query(
-        func.coalesce(func.sum(SpendRecord.calculated_scope_3), 0)
-    ).filter(SpendRecord.owner_id == current_user.id).scalar()
+    # Scopes
+    total_scope_1 = db.query(func.coalesce(func.sum(SpendRecord.calculated_scope_1), 0)).filter(
+        SpendRecord.owner_id == current_user.id
+    ).scalar()
+    total_scope_2 = db.query(func.coalesce(func.sum(SpendRecord.calculated_scope_2), 0)).filter(
+        SpendRecord.owner_id == current_user.id
+    ).scalar()
+    total_scope_3 = db.query(func.coalesce(func.sum(SpendRecord.calculated_scope_3), 0)).filter(
+        SpendRecord.owner_id == current_user.id
+    ).scalar()
 
     # Record Tracking
-    records_calculated = db.query(SpendRecord).filter(
-        SpendRecord.calculated_co2e != None,
+    record_count = db.query(SpendRecord).filter(
         SpendRecord.owner_id == current_user.id
     ).count()
 
-    records_uncalculated = db.query(SpendRecord).filter(
-        SpendRecord.calculated_co2e == None,
+    # Coverage
+    covered_spend = db.query(func.coalesce(func.sum(SpendRecord.spend_amount), 0)).filter(
+        SpendRecord.factor_used_id != None,
         SpendRecord.owner_id == current_user.id
-    ).count()
+    ).scalar()
 
-    emission_intensity = float(total_emissions) / float(total_spend) if total_spend else 0
+    coverage_percentage = (float(covered_spend) / float(total_spend) * 100) if total_spend and total_spend > 0 else 0
 
     return {
         "total_spend": float(total_spend),
-        "total_emissions": float(total_emissions),
+        "total_co2e": float(total_co2e),
         "total_scope_1": float(total_scope_1),
         "total_scope_2": float(total_scope_2),
         "total_scope_3": float(total_scope_3),
-        "emission_intensity": emission_intensity,
-        "records_calculated": records_calculated,
-        "records_uncalculated": records_uncalculated
+        "record_count": record_count,
+        "coverage_percentage": coverage_percentage
     }
 
 @router.get("/coverage", response_model=dict)
