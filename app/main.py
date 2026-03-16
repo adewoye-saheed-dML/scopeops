@@ -17,8 +17,8 @@ app = FastAPI(title="Procurement Carbon Engine")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000"       
-        # "https://your-frontend-url.com" 
+        "http://localhost:3000",       
+        "https://scopeopsfe-adewoyesaheed1845-nzqvbt9r.leapcell.dev" 
     ], 
     allow_credentials=True,
     allow_methods=["*"], 
