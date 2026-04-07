@@ -6,6 +6,7 @@ from app.models.emission_factors import EmissionFactor
 from decimal import Decimal, InvalidOperation
 from app.models.category_factor_mapping import CategoryFactorMapping
 
+
 def calculate_emissions(db: Session):
     """
     Calculate CO2e for spend/activity records.
@@ -47,25 +48,33 @@ def calculate_emissions(db: Session):
 
         # Priority 3: Category Fallback
         if not factor and record.category_code:
-            # Ensuring case-insensitive string matching just in case
             mapping = db.query(CategoryFactorMapping).filter(
-                CategoryFactorMapping.category_id == record.category_code,
+                CategoryFactorMapping.category_id.ilike(record.category_code),
                 CategoryFactorMapping.is_active == True
             ).first()
-            
-            if mapping:
+
+        if mapping:
+            factor = db.query(EmissionFactor).filter(
+            EmissionFactor.provider == "Open CEDA",
+            EmissionFactor.external_id == mapping.emission_factor_id,
+            EmissionFactor.geography == supplier.country
+            ).first()
+                
+            if factor:
+                method = "CEDA_Country_Specific"
+            else:
+                # US Fallback
                 factor = db.query(EmissionFactor).filter(
-                    EmissionFactor.id == mapping.emission_factor_id
+                    EmissionFactor.provider == "Open CEDA",
+                    EmissionFactor.external_id == mapping.emission_factor_id,
+                    EmissionFactor.geography == "US"
                 ).first()
-                method = "Category_Average"
+                if factor:
+                    method = "CEDA_Regional_Fallback"
 
-        # Priority 4: System Fallback
         if not factor:
-            factor = db.query(EmissionFactor).first()
-            method = "System_Fallback"
-
-        # Final safety check: only skip if no factors exist at all
-        if not factor:
+            record.calculated_co2e = None
+            record.calculation_method = "Requires_Mapping"
             continue
         try:
             # Robust unit checking
