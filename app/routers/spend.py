@@ -17,6 +17,8 @@ from app.schemas.spend import SpendCreate, SpendRead
 from app.services.emission_calculator import calculate_emissions
 from app.services.entity_resolution import resolve_supplier
 from app.routers.auth import get_current_user, User
+from app.models.category import Category
+
 
 router = APIRouter(prefix="/spend", tags=["Spend"])
 
@@ -349,3 +351,17 @@ def seed_demo_data(
     db.commit()
 
     return {"message": "Demo data successfully loaded"}
+
+@router.get("/categories", response_model=list[dict])
+def list_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch all CEDA master categories for the mapping dropdown."""
+    categories = db.query(Category).all()
+    
+    # Returning a simple list of dictionaries perfectly formatted for the frontend Select component
+    return [
+        {"id": cat.category_id, "name": cat.category_name} 
+        for cat in categories
+    ]
