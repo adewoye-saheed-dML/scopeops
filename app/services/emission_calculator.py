@@ -5,15 +5,16 @@ from app.models.supplier import Supplier
 from app.models.emission_factors import EmissionFactor
 from decimal import Decimal, InvalidOperation
 from app.models.category_factor_mapping import CategoryFactorMapping
+from app.services.tree_rollup import get_effective_factor
 
 
 def calculate_emissions(db: Session):
     """
     Calculate CO2e for spend/activity records.
     Priority:
-        1. Supplier-level locked factor
+        1. Corporate Tree / Supplier-level factor
         2. Existing manual factor on record
-        3. Category-based factor (CategoryFactorMapping)
+        3. Category-based factor (CEDA Fallback)
     """
     uncalculated_records = db.query(SpendRecord).filter(
         SpendRecord.calculated_co2e == None
@@ -32,50 +33,57 @@ def calculate_emissions(db: Session):
         factor = None
         method = "Unknown"
 
-        # Priority 1: Supplier-level factor
-        if supplier.resolved_factor_id:
-            factor = db.query(EmissionFactor).filter(
-                EmissionFactor.id == supplier.resolved_factor_id
-            ).first()
-            method = "Supplier_Locked"
+        # Priority 1: Corporate Tree Cascade
+        tree_factor = get_effective_factor(db, supplier.id)
+        if tree_factor:
+            factor = tree_factor
+            # Let's smartly label it so users know if it cascaded or was direct
+            if supplier.resolved_factor_id == factor.id:
+                method = "Supplier_Locked"
+            else:
+                method = "Corporate_Tree_Cascade"
 
         # Priority 2: Manual Override
         if not factor and record.factor_used_id:
             factor = db.query(EmissionFactor).filter(
                 EmissionFactor.id == record.factor_used_id
             ).first()
-            method = "Manual_Override"
+            if factor:
+                method = "Manual_Override"
 
-        # Priority 3: Category Fallback
+        # Priority 3: Category Fallback (CEDA)
         if not factor and record.category_code:
             mapping = db.query(CategoryFactorMapping).filter(
                 CategoryFactorMapping.category_id.ilike(record.category_code),
                 CategoryFactorMapping.is_active == True
             ).first()
 
-        if mapping:
-            factor = db.query(EmissionFactor).filter(
-            EmissionFactor.provider == "Open CEDA",
-            EmissionFactor.external_id == mapping.emission_factor_id,
-            EmissionFactor.geography == supplier.country
-            ).first()
-                
-            if factor:
-                method = "CEDA_Country_Specific"
-            else:
-                # US Fallback
+            # Fixed indentation here so it only runs if a mapping is found
+            if mapping:
                 factor = db.query(EmissionFactor).filter(
                     EmissionFactor.provider == "Open CEDA",
                     EmissionFactor.external_id == mapping.emission_factor_id,
-                    EmissionFactor.geography == "US"
+                    EmissionFactor.geography == supplier.region  # Fixed to use .region instead of .country
                 ).first()
+                    
                 if factor:
-                    method = "CEDA_Regional_Fallback"
+                    method = "CEDA_Region_Specific"
+                else:
+                    # US/Global Fallback
+                    factor = db.query(EmissionFactor).filter(
+                        EmissionFactor.provider == "Open CEDA",
+                        EmissionFactor.external_id == mapping.emission_factor_id,
+                        EmissionFactor.geography == "US"
+                    ).first()
+                    if factor:
+                        method = "CEDA_Regional_Fallback"
 
+        # Final Safety Check
         if not factor:
             record.calculated_co2e = None
             record.calculation_method = "Requires_Mapping"
             continue
+            
         try:
             # Robust unit checking
             factor_unit = str(factor.unit_of_measure).upper()
@@ -87,7 +95,6 @@ def calculate_emissions(db: Session):
                 base_value = Decimal(record.quantity)
             else:
                 # Fallback: if it's spend based but they provided quantity, or vice versa, 
-                # try to use whatever number they provided to prevent silent failures during demo
                 if record.spend_amount is not None:
                     base_value = Decimal(record.spend_amount)
                 elif record.quantity is not None:
@@ -99,12 +106,12 @@ def calculate_emissions(db: Session):
             intensity = Decimal(factor.co2e_per_unit)
             record.calculated_co2e = base_value * intensity
             
-            # Calculate Scope Breakdowns
-            if factor.scope_1_intensity is not None:
+            # Calculate Scope Breakdowns (Using getattr to safely handle schema variations)
+            if getattr(factor, 'scope_1_intensity', None) is not None:
                 record.calculated_scope_1 = base_value * Decimal(factor.scope_1_intensity)
-            if factor.scope_2_intensity is not None:
+            if getattr(factor, 'scope_2_intensity', None) is not None:
                 record.calculated_scope_2 = base_value * Decimal(factor.scope_2_intensity)
-            if factor.scope_3_intensity is not None:
+            if getattr(factor, 'scope_3_intensity', None) is not None:
                 record.calculated_scope_3 = base_value * Decimal(factor.scope_3_intensity)
 
             record.factor_used_id = factor.id
