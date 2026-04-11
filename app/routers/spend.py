@@ -15,6 +15,7 @@ from app.models.spend import SpendRecord
 from app.models.supplier import Supplier
 from app.schemas.spend import SpendCreate, SpendRead
 from app.services.emission_calculator import calculate_emissions
+from app.services.entity_resolution import resolve_supplier
 from app.routers.auth import get_current_user, User
 
 router = APIRouter(prefix="/spend", tags=["Spend"])
@@ -95,6 +96,7 @@ async def bulk_upload_spend(
     
     records_to_insert = []
     errors = []
+    review_warnings = []
     row_number = 1  
 
     # Helper function to convert empty CSV strings to None
@@ -110,12 +112,15 @@ async def bulk_upload_spend(
             continue
 
         try:
-            supplier = db.query(Supplier).filter(
-                Supplier.supplier_name == supplier_name,
-                Supplier.owner_id == current_user.id
-            ).first()
-
-            if not supplier:
+            resolution = resolve_supplier(db, supplier_name, current_user.id)
+            if resolution["status"] == "AUTO_MATCHED":
+                supplier_id = str(resolution["supplier_id"])
+            elif resolution["status"] == "REQUIRES_REVIEW":
+                supplier_id = str(resolution["supplier_id"])
+                review_warnings.append(
+                    f"Row {row_number}: '{supplier_name}' matched with low confidence. Requires review."
+                )
+            else:
                 try:
                     supplier = Supplier(
                         supplier_name=supplier_name,
@@ -131,7 +136,7 @@ async def bulk_upload_spend(
                     errors.append(f"Row {row_number}: Supplier creation failed due to integrity error.")
                     continue
 
-            supplier_id = str(supplier.id)
+                supplier_id = str(supplier.id)
 
             # Leverage the existing Pydantic model to validate the row exactly like a normal POST
             payload = SpendCreate(
@@ -169,7 +174,9 @@ async def bulk_upload_spend(
         "message": "Bulk upload processed",
         "inserted_count": len(records_to_insert),
         "error_count": len(errors),
-        "errors": errors[:50]  
+        "errors": errors[:50],
+        "review_count": len(review_warnings),
+        "review_warnings": review_warnings[:50]
     }
 
 @router.post("/calculate", response_model=dict)
