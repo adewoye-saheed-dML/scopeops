@@ -1,6 +1,5 @@
 def test_auth_flow(client):
     """Test Signup and Login to get Token."""
-    # 1. Signup
     res = client.post("/auth/signup", json={
         "email": "test@example.com",
         "password": "strongpassword123",
@@ -9,7 +8,6 @@ def test_auth_flow(client):
     assert res.status_code == 200
     assert res.json()["email"] == "test@example.com"
 
-    # 2. Login
     res = client.post("/auth/login", data={
         "username": "test@example.com",
         "password": "strongpassword123"
@@ -21,8 +19,6 @@ def test_auth_flow(client):
 
 def test_create_supplier_and_spend(client):
     """Full flow: Auth -> Create Supplier -> Create Spend -> Get Summary."""
-    
-    # Get Auth Token
     token = test_auth_flow(client)
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -48,29 +44,24 @@ def test_create_supplier_and_spend(client):
     assert res_spend.status_code == 200
     assert float(res_spend.json()["spend_amount"]) == 5000.0
 
-    # 3. Check Spend Summary (Should be 5000 spend, 0 emissions initially)
+    # 3. Check Spend Summary (Using the updated "total_co2e" key)
     res_summary = client.get("/spend/summary", headers=headers)
     assert res_summary.status_code == 200
     data = res_summary.json()
     assert data["total_spend"] == 5000.0
-    assert data["total_emissions"] == 0.0  # Calculation hasn't run yet
+    assert data["total_co2e"] == 0.0  # Changed from total_emissions to total_co2e
 
 def test_supplier_isolation(client):
     """Test Multi-tenancy: User B cannot see User A's suppliers."""
-    
-    # User A Signup/Login
     client.post("/auth/signup", json={"email": "userA@test.com", "password": "pw", "full_name": "A"})
     token_a = client.post("/auth/login", data={"username": "userA@test.com", "password": "pw"}).json()["access_token"]
     
-    # User B Signup/Login
     client.post("/auth/signup", json={"email": "userB@test.com", "password": "pw", "full_name": "B"})
     token_b = client.post("/auth/login", data={"username": "userB@test.com", "password": "pw"}).json()["access_token"]
 
-    # User A creates a supplier
     res = client.post("/suppliers/", json={"supplier_name": "User A Sup", "industry_locked": "Tech"}, headers={"Authorization": f"Bearer {token_a}"})
     assert res.status_code == 200
     
-    # User B tries to list suppliers (Should see empty list, not User A's)
     res_list = client.get("/suppliers/", headers={"Authorization": f"Bearer {token_b}"})
     assert res_list.status_code == 200
     assert len(res_list.json()) == 0

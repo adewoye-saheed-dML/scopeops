@@ -8,6 +8,16 @@ from app.models.category_factor_mapping import CategoryFactorMapping
 from app.services.tree_rollup import get_effective_factor
 
 
+from datetime import datetime
+from sqlalchemy.orm import Session
+from app.models.spend import SpendRecord
+from app.models.supplier import Supplier
+from app.models.emission_factors import EmissionFactor
+from decimal import Decimal, InvalidOperation
+from app.models.category_factor_mapping import CategoryFactorMapping
+from app.services.tree_rollup import get_effective_factor
+
+
 def calculate_emissions(db: Session):
     """
     Calculate CO2e for spend/activity records.
@@ -58,17 +68,18 @@ def calculate_emissions(db: Session):
             ).first()
 
             if mapping:
-                # 3a. Try to match the exact region of the supplier
-                factor = db.query(EmissionFactor).filter(
-                    EmissionFactor.provider == "Open CEDA",
-                    EmissionFactor.external_id == mapping.emission_factor_id,
-                    EmissionFactor.geography.ilike(supplier.region) 
-                ).first()
+                # 3a. Try to match the exact region of the supplier (Only if region is provided)
+                if supplier.region:
+                    factor = db.query(EmissionFactor).filter(
+                        EmissionFactor.provider == "Open CEDA",
+                        EmissionFactor.external_id == mapping.emission_factor_id,
+                        EmissionFactor.geography.ilike(supplier.region) 
+                    ).first()
                     
                 if factor:
                     method = f"CEDA_{supplier.region}_Specific"
                 else:
-                    # 3b. Try 'Global' or 'RoW' (Rest of World) if region match fails
+                    # 3b. Try 'Global' or 'RoW' (Rest of World) if region match fails or is missing
                     factor = db.query(EmissionFactor).filter(
                         EmissionFactor.provider == "Open CEDA",
                         EmissionFactor.external_id == mapping.emission_factor_id,

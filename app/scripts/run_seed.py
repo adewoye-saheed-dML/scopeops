@@ -9,7 +9,6 @@ def main():
         root_dir = Path(__file__).resolve().parent.parent.parent
         data_dir = root_dir / "data"
 
-        # Look specifically for the single Excel file
         excel_path = data_dir / "Open CEDA 2025.xlsx"
         
         if not excel_path.exists():
@@ -22,7 +21,7 @@ def main():
         seed_ceda_categories(excel_path)
         print("✅ Categories seeded successfully!\n")
 
-        print("2. Seeding Global CEDA Emission Factors (This may take a minute)...")
+        print("2. Seeding Global CEDA Emission Factors (This may take a few minutes)...")
         seed_ceda_factors(excel_path)
         print("✅ Emission factors seeded successfully!\n")
 

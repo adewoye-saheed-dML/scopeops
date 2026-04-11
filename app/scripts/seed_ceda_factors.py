@@ -1,12 +1,13 @@
-import csv
 import re
 import uuid
+import openpyxl
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.database import engine
 from app.models.emission_factors import EmissionFactor
 from app.models.user import User
+from app.models.category import Category
 
 PROVIDER = "Open CEDA"
 UNIT_OF_MEASURE = "USD"
@@ -28,79 +29,137 @@ def parse_decimal(value: object) -> Decimal | None:
     text = str(value).strip()
     if not text or text.lower() in {"na", "n/a", "nan", "null"}: return None
     cleaned = text.replace(",", "")
+    if cleaned.startswith("(") and cleaned.endswith(")"): cleaned = f"-{cleaned[1:-1]}"
     try:
         return Decimal(cleaned)
     except (InvalidOperation, ValueError):
         return None
 
-def format_external_id(sector_code: str, sector_name: str) -> str:
-    slug = sector_code if sector_code else re.sub(r"[^A-Za-z0-9]+", "_", sector_name).strip("_").upper()
+def format_external_id(sector_code: str) -> str:
+    slug = sector_code.strip().upper()
     return f"OPEN-CEDA-2025-{slug}"
 
-def seed_ceda_factors(raw_csv_path: Path, conversion_csv_path: Path) -> None:
-    # 1. Load Conversions (These are generally global/sector-based)
-    conversions = {}
-    with conversion_csv_path.open("r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            code = str(row.get("Sector Code") or "").strip()
-            mult = parse_decimal(row.get("Purchaser - producer conversion"))
-            if code and mult:
-                conversions[code] = mult
-
-    # 2. Process Raw Factors for ALL Countries
-    with raw_csv_path.open("r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        with Session(engine) as session:
-            sys_user_id = get_system_user(session)
-            added = 0
+def seed_ceda_factors(xlsx_path: Path) -> None:
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+    
+    # ----------------------------------------------------
+    # 1. Load Conversions (Horizontal Matrix)
+    # ----------------------------------------------------
+    sheet_conv = next((s for s in wb.sheetnames if "conversion" in s.lower()), None)
+    ws_conv = wb[sheet_conv]
+    
+    code_row = []
+    mult_row = []
+    
+    for row in ws_conv.iter_rows(values_only=True):
+        row_strs = [str(c).strip() if c is not None else "" for c in row]
+        row_lower = [x.lower() for x in row_strs]
+        
+        # '1111a0' is the first sector code. This is a foolproof way to find the header row!
+        if "1111a0" in row_lower:
+            code_row = row_strs
+        elif any("purchaser" in x and "producer" in x for x in row_lower):
+            mult_row = row_strs
             
-            for row in reader:
-                # Capture the actual Country/Geography from the CSV
-                country = str(row.get("Country") or row.get("Geography") or "Global").strip()
+        if code_row and mult_row:
+            break
+            
+    conversions = {}
+    for code, mult_val in zip(code_row, mult_row):
+        code_str = code.strip()
+        # Skip the label columns
+        if not code_str or code_str.lower() in ["sector name", "sector code", "purchaser - producer conversion", "source"]:
+            continue
+            
+        mult = parse_decimal(mult_val)
+        if mult:
+            conversions[code_str] = mult
+
+    print(f"🔢 Extracted {len(conversions)} conversion multipliers horizontally.")
+
+    # ----------------------------------------------------
+    # 2. Process Raw Factors (Horizontal Matrix)
+    # ----------------------------------------------------
+    sheet_raw = next((s for s in wb.sheetnames if "raw" in s.lower()), None)
+    ws_raw = wb[sheet_raw]
+    
+    codes_row = []
+    data_rows = []
+    found_headers = False
+    
+    for row in ws_raw.iter_rows(values_only=True):
+        row_strs = [str(c).strip() if c is not None else "" for c in row]
+        row_lower = [x.lower() for x in row_strs]
+        
+        if not found_headers:
+            if "1111a0" in row_lower:
+                codes_row = row_strs
+                found_headers = True
+        else:
+            if any(row_strs): # Ensure row isn't completely blank
+                data_rows.append(row_strs)
                 
-                code = str(row.get("Sector Code") or "").strip()
-                name = str(row.get("Sector Name") or "").strip()
-                base_ef = parse_decimal(row.get("GHG_t_Raw"))
+    print(f"📋 Detected {len(data_rows)} Country Rows to process.")
+
+    with Session(engine) as session:
+        sys_user_id = get_system_user(session)
+        # Fetch categories to give the factors nice names
+        category_map = {c.category_id: c.category_name for c in session.query(Category).all()}
+        added = 0
+        
+        # Iterate over each Country (Row)
+        for row in data_rows:
+            country_name = str(row[1]).strip() # The 2nd column is the Country Name
+            
+            if not country_name or country_name.lower() in ["country", "geography", ""]:
+                continue
                 
+            # Iterate over every Sector Code (Column)
+            for col_idx in range(len(row)):
+                if col_idx >= len(codes_row):
+                    continue
+                    
+                code = codes_row[col_idx].strip()
+                
+                # Skip the label columns on the far left (Country, Country Code, etc.)
+                if not code or code.lower() in ["country code", "country", "country ", "geography"]:
+                    continue
+                    
+                base_ef = parse_decimal(row[col_idx])
                 multiplier = conversions.get(code)
+                
                 if not base_ef or not multiplier:
                     continue
 
                 final_ef = base_ef * multiplier
-                ext_id = format_external_id(code, name)
+                ext_id = format_external_id(code)
 
-                # Check for existing factor by ID AND specific Geography
+                # Check if it exists
                 exists = session.query(EmissionFactor).filter_by(
-                    external_id=ext_id, 
-                    geography=country
+                    external_id=ext_id, geography=country_name
                 ).first()
 
                 if not exists:
+                    sector_name = category_map.get(code, f"Sector {code}")
+                    
                     session.add(EmissionFactor(
-                        external_id=ext_id, 
-                        provider=PROVIDER, 
-                        name=f"{name} ({code})",
-                        geography=country, # Now saves the actual country (e.g., Germany, China, etc.)
-                        year=YEAR, 
-                        unit_of_measure=UNIT_OF_MEASURE,
-                        co2e_per_unit=final_ef, 
-                        scope_3_intensity=final_ef,
-                        owner_id=sys_user_id, 
-                        version=VERSION,
-                        methodology=f"Open CEDA 2025 Global Factors - {country}"
+                        external_id=ext_id, provider=PROVIDER, name=f"{sector_name} ({code})",
+                        geography=country_name, year=YEAR, unit_of_measure=UNIT_OF_MEASURE,
+                        co2e_per_unit=final_ef, scope_3_intensity=final_ef,
+                        owner_id=sys_user_id, version=VERSION,
+                        methodology=f"Open CEDA 2025 Global Factors - {country_name}"
                     ))
                     added += 1
                     
-                    # Commit in batches of 500 to handle the large global dataset
-                    if added % 500 == 0:
+                    if added % 2000 == 0:
                         session.commit()
-            
-            session.commit()
-            print(f"Seeded {added} Global Open CEDA factors.")
+                        print(f"   ...committing batch ({added} factors loaded)...")
+        
+        session.commit()
+        print(f"✅ Successfully seeded {added} Global Open CEDA factors!")
+        
+    wb.close()
 
 if __name__ == "__main__":
-    data_dir = Path(__file__).resolve().parent.parent.parent / "data"
-    raw = data_dir / "Open CEDA 2025.xlsx - GHG_t_Raw.csv"
-    conv = data_dir / "Open CEDA 2025.xlsx - Purchaser - producer conversion.csv"
-    seed_ceda_factors(raw, conv)
+    default_xlsx = Path(__file__).resolve().parent.parent.parent / "data" / "Open CEDA 2025.xlsx"
+    seed_ceda_factors(default_xlsx)
