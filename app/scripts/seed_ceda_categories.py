@@ -46,4 +46,4 @@ def seed_ceda_categories(xlsx_path: Path, sheet_name: str = "metadata") -> None:
 if __name__ == "__main__":
     default_xlsx = Path(__file__).resolve().parent / "Open CEDA 2025.xlsx"
     seed_ceda_categories(default_xlsx)
-    print("Open CEDA categories seeded successfully")
+    print("Open CEDA categories seeded successfully") 
