@@ -37,7 +37,6 @@ def calculate_emissions(db: Session):
         tree_factor = get_effective_factor(db, supplier.id)
         if tree_factor:
             factor = tree_factor
-            # Let's smartly label it so users know if it cascaded or was direct
             if supplier.resolved_factor_id == factor.id:
                 method = "Supplier_Locked"
             else:
@@ -51,32 +50,33 @@ def calculate_emissions(db: Session):
             if factor:
                 method = "Manual_Override"
 
-        # Priority 3: Category Fallback (CEDA)
+        # Priority 3: Category Fallback (CEDA Global)
         if not factor and record.category_code:
             mapping = db.query(CategoryFactorMapping).filter(
                 CategoryFactorMapping.category_id.ilike(record.category_code),
                 CategoryFactorMapping.is_active == True
             ).first()
 
-            # Fixed indentation here so it only runs if a mapping is found
             if mapping:
+                # 3a. Try to match the exact region of the supplier
                 factor = db.query(EmissionFactor).filter(
                     EmissionFactor.provider == "Open CEDA",
                     EmissionFactor.external_id == mapping.emission_factor_id,
-                    EmissionFactor.geography == supplier.region  # Fixed to use .region instead of .country
+                    EmissionFactor.geography.ilike(supplier.region) 
                 ).first()
                     
                 if factor:
-                    method = "CEDA_Region_Specific"
+                    method = f"CEDA_{supplier.region}_Specific"
                 else:
-                    # US/Global Fallback
+                    # 3b. Try 'Global' or 'RoW' (Rest of World) if region match fails
                     factor = db.query(EmissionFactor).filter(
                         EmissionFactor.provider == "Open CEDA",
                         EmissionFactor.external_id == mapping.emission_factor_id,
-                        EmissionFactor.geography == "US"
-                    ).first()
+                        EmissionFactor.geography.in_(["Global", "Rest of World", "RoW", "US"])
+                    ).order_by(EmissionFactor.geography.desc()).first() # Prioritize US/Global
+                    
                     if factor:
-                        method = "CEDA_Regional_Fallback"
+                        method = "CEDA_Global_Fallback"
 
         # Final Safety Check
         if not factor:
@@ -87,32 +87,31 @@ def calculate_emissions(db: Session):
         try:
             # Robust unit checking
             factor_unit = str(factor.unit_of_measure).upper()
-            is_spend_based = ("USD" in factor_unit or "$" in factor_unit or "SPEND" in factor_unit)
+            is_spend_based = any(u in factor_unit for u in ["USD", "$", "SPEND"])
             
+            # Use Decimal for high-precision financial/carbon math
             if is_spend_based and record.spend_amount is not None:
-                base_value = Decimal(record.spend_amount)
+                base_value = Decimal(str(record.spend_amount))
             elif not is_spend_based and record.quantity is not None:
-                base_value = Decimal(record.quantity)
+                base_value = Decimal(str(record.quantity))
             else:
-                # Fallback: if it's spend based but they provided quantity, or vice versa, 
-                if record.spend_amount is not None:
-                    base_value = Decimal(record.spend_amount)
-                elif record.quantity is not None:
-                    base_value = Decimal(record.quantity)
+                # Last resort fallback to whatever number exists
+                val = record.spend_amount or record.quantity
+                if val is not None:
+                    base_value = Decimal(str(val))
                 else:
                     continue
 
             # Calculate Total CO2e
-            intensity = Decimal(factor.co2e_per_unit)
+            intensity = Decimal(str(factor.co2e_per_unit))
             record.calculated_co2e = base_value * intensity
             
-            # Calculate Scope Breakdowns (Using getattr to safely handle schema variations)
-            if getattr(factor, 'scope_1_intensity', None) is not None:
-                record.calculated_scope_1 = base_value * Decimal(factor.scope_1_intensity)
-            if getattr(factor, 'scope_2_intensity', None) is not None:
-                record.calculated_scope_2 = base_value * Decimal(factor.scope_2_intensity)
-            if getattr(factor, 'scope_3_intensity', None) is not None:
-                record.calculated_scope_3 = base_value * Decimal(factor.scope_3_intensity)
+            # Calculate Scope Breakdowns
+            for scope in [1, 2, 3]:
+                field_name = f'scope_{scope}_intensity'
+                intensity_val = getattr(factor, field_name, None)
+                if intensity_val is not None:
+                    setattr(record, f'calculated_scope_{scope}', base_value * Decimal(str(intensity_val)))
 
             record.factor_used_id = factor.id
             record.calculated_at = datetime.utcnow()
