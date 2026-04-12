@@ -42,9 +42,6 @@ def format_external_id(sector_code: str) -> str:
 def seed_ceda_factors(xlsx_path: Path) -> None:
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     
-    # ----------------------------------------------------
-    # 1. Load Conversions (Horizontal Matrix)
-    # ----------------------------------------------------
     sheet_conv = next((s for s in wb.sheetnames if "conversion" in s.lower()), None)
     ws_conv = wb[sheet_conv]
     
@@ -55,10 +52,9 @@ def seed_ceda_factors(xlsx_path: Path) -> None:
         row_strs = [str(c).strip() if c is not None else "" for c in row]
         row_lower = [x.lower() for x in row_strs]
         
-        # '1111a0' is the first sector code. This is a foolproof way to find the header row!
-        if "1111a0" in row_lower:
+        if any("1111a0" in x for x in row_lower):
             code_row = row_strs
-        elif any("purchaser" in x and "producer" in x for x in row_lower):
+        elif any("purchaser" in x and "producer" in x for x in row_lower) and len([x for x in row_strs if x]) > 5:
             mult_row = row_strs
             
         if code_row and mult_row:
@@ -67,7 +63,6 @@ def seed_ceda_factors(xlsx_path: Path) -> None:
     conversions = {}
     for code, mult_val in zip(code_row, mult_row):
         code_str = code.strip()
-        # Skip the label columns
         if not code_str or code_str.lower() in ["sector name", "sector code", "purchaser - producer conversion", "source"]:
             continue
             
@@ -75,11 +70,11 @@ def seed_ceda_factors(xlsx_path: Path) -> None:
         if mult:
             conversions[code_str] = mult
 
-    print(f"🔢 Extracted {len(conversions)} conversion multipliers horizontally.")
+    print(f"Extracted {len(conversions)} conversion multipliers.")
 
-    # ----------------------------------------------------
-    # 2. Process Raw Factors (Horizontal Matrix)
-    # ----------------------------------------------------
+
+    #  Process Raw Factors (Horizontal Matrix)
+    
     sheet_raw = next((s for s in wb.sheetnames if "raw" in s.lower()), None)
     ws_raw = wb[sheet_raw]
     
@@ -92,73 +87,86 @@ def seed_ceda_factors(xlsx_path: Path) -> None:
         row_lower = [x.lower() for x in row_strs]
         
         if not found_headers:
-            if "1111a0" in row_lower:
+            if any("1111a0" in x for x in row_lower):
                 codes_row = row_strs
                 found_headers = True
         else:
-            if any(row_strs): # Ensure row isn't completely blank
+            if any(row_strs):
                 data_rows.append(row_strs)
                 
-    print(f"📋 Detected {len(data_rows)} Country Rows to process.")
+    print(f"Detected {len(data_rows)} Country Rows to process.")
+    wb.close()
 
+
+    # FAST In-Memory Data Prep & Bulk Insert
+
+    new_factors_to_insert = []
+
+    # Open a brief session just to grab existing data and categories
     with Session(engine) as session:
         sys_user_id = get_system_user(session)
-        # Fetch categories to give the factors nice names
         category_map = {c.category_id: c.category_name for c in session.query(Category).all()}
-        added = 0
         
-        # Iterate over each Country (Row)
-        for row in data_rows:
-            country_name = str(row[1]).strip() # The 2nd column is the Country Name
+        print("Downloading existing database index to memory (preventing duplicates)...")
+        # Grab only the identifiers to keep memory usage tiny
+        existing_tuples = session.query(EmissionFactor.external_id, EmissionFactor.geography).all()
+        existing_set = set(existing_tuples) # O(1) lookup speed
+
+    print("Building global carbon matrix in memory...")
+    for row in data_rows:
+        country_name = str(row[1]).strip() 
+        
+        if not country_name or country_name.lower() in ["country", "geography", ""]:
+            continue
             
-            if not country_name or country_name.lower() in ["country", "geography", ""]:
+        for col_idx in range(len(row)):
+            if col_idx >= len(codes_row):
                 continue
                 
-            # Iterate over every Sector Code (Column)
-            for col_idx in range(len(row)):
-                if col_idx >= len(codes_row):
-                    continue
-                    
-                code = codes_row[col_idx].strip()
+            code = codes_row[col_idx].strip()
+            
+            if not code or code.lower() in ["country code", "country", "country ", "geography"]:
+                continue
                 
-                # Skip the label columns on the far left (Country, Country Code, etc.)
-                if not code or code.lower() in ["country code", "country", "country ", "geography"]:
-                    continue
-                    
-                base_ef = parse_decimal(row[col_idx])
-                multiplier = conversions.get(code)
+            base_ef = parse_decimal(row[col_idx])
+            multiplier = conversions.get(code)
+            
+            if not base_ef or not multiplier:
+                continue
+
+            final_ef = base_ef * multiplier
+            ext_id = format_external_id(code)
+
+            # INSTANT Memory Check instead of slow Database Query
+            if (ext_id, country_name) not in existing_set:
+                sector_name = category_map.get(code, f"Sector {code}")
                 
-                if not base_ef or not multiplier:
-                    continue
+                new_factors_to_insert.append(EmissionFactor(
+                    external_id=ext_id, provider=PROVIDER, name=f"{sector_name} ({code})",
+                    geography=country_name, year=YEAR, unit_of_measure=UNIT_OF_MEASURE,
+                    co2e_per_unit=final_ef, scope_3_intensity=final_ef,
+                    owner_id=sys_user_id, version=VERSION,
+                    methodology=f"Open CEDA 2025 Global Factors - {country_name}"
+                ))
+                # Add to set so we don't accidentally queue duplicates if the Excel file has them
+                existing_set.add((ext_id, country_name))
 
-                final_ef = base_ef * multiplier
-                ext_id = format_external_id(code)
+    print(f"Prepared {len(new_factors_to_insert)} new global factors. Blasting to database...")
 
-                # Check if it exists
-                exists = session.query(EmissionFactor).filter_by(
-                    external_id=ext_id, geography=country_name
-                ).first()
+    # Open fresh sessions to bulk save blocks of data, preventing connection timeouts
+    batch_size = 5000
+    inserted_count = 0
+    
+    for i in range(0, len(new_factors_to_insert), batch_size):
+        batch = new_factors_to_insert[i:i + batch_size]
+        # Using a fresh session for each batch ensures the connection stays alive
+        with Session(engine) as session:
+            session.add_all(batch)
+            session.commit()
+            inserted_count += len(batch)
+            print(f"   ...successfully committed {inserted_count} / {len(new_factors_to_insert)}...")
 
-                if not exists:
-                    sector_name = category_map.get(code, f"Sector {code}")
-                    
-                    session.add(EmissionFactor(
-                        external_id=ext_id, provider=PROVIDER, name=f"{sector_name} ({code})",
-                        geography=country_name, year=YEAR, unit_of_measure=UNIT_OF_MEASURE,
-                        co2e_per_unit=final_ef, scope_3_intensity=final_ef,
-                        owner_id=sys_user_id, version=VERSION,
-                        methodology=f"Open CEDA 2025 Global Factors - {country_name}"
-                    ))
-                    added += 1
-                    
-                    if added % 2000 == 0:
-                        session.commit()
-                        print(f"   ...committing batch ({added} factors loaded)...")
-        
-        session.commit()
-        print(f"✅ Successfully seeded {added} Global Open CEDA factors!")
-        
-    wb.close()
+    print(f"Master seed complete! {inserted_count} Global Open CEDA factors added.")
 
 if __name__ == "__main__":
     default_xlsx = Path(__file__).resolve().parent.parent.parent / "data" / "Open CEDA 2025.xlsx"
