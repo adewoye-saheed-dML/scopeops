@@ -8,16 +8,6 @@ from app.models.category_factor_mapping import CategoryFactorMapping
 from app.services.tree_rollup import get_effective_factor
 
 
-from datetime import datetime
-from sqlalchemy.orm import Session
-from app.models.spend import SpendRecord
-from app.models.supplier import Supplier
-from app.models.emission_factors import EmissionFactor
-from decimal import Decimal, InvalidOperation
-from app.models.category_factor_mapping import CategoryFactorMapping
-from app.services.tree_rollup import get_effective_factor
-
-
 def calculate_emissions(db: Session):
     """
     Calculate CO2e for spend/activity records.
