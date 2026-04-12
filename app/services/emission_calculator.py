@@ -14,7 +14,7 @@ def calculate_emissions(db: Session):
     Priority:
         1. Corporate Tree / Supplier-level factor
         2. Existing manual factor on record
-        3. Category-based factor (CEDA Fallback)
+        3. Category-based factor (CEDA Fallback & Direct Match)
     """
     uncalculated_records = db.query(SpendRecord).filter(
         SpendRecord.calculated_co2e == None
@@ -50,36 +50,48 @@ def calculate_emissions(db: Session):
             if factor:
                 method = "Manual_Override"
 
-        # Priority 3: Category Fallback (CEDA Global)
+        # Priority 3: Category Mapping or Direct CEDA Match
         if not factor and record.category_code:
+            target_ext_id = None
+            
+            # 3a. Check if a custom mapping exists in the Resolution Center
             mapping = db.query(CategoryFactorMapping).filter(
                 CategoryFactorMapping.category_id.ilike(record.category_code),
                 CategoryFactorMapping.is_active == True
             ).first()
 
             if mapping:
-                # 3a. Try to match the exact region of the supplier (Only if region is provided)
+                target_ext_id = mapping.emission_factor_id
+            else:
+                # 3b. Auto-Match: If no manual mapping exists, assume the category code IS a direct CEDA code
+                clean_code = str(record.category_code).strip().upper()
+                target_ext_id = f"OPEN-CEDA-2025-{clean_code}"
+
+            # Now that we have the target ID, fetch the country multiplier
+            if target_ext_id:
+                # Try to match the exact region of the supplier
                 if supplier.region:
                     factor = db.query(EmissionFactor).filter(
                         EmissionFactor.provider == "Open CEDA",
-                        EmissionFactor.external_id == mapping.emission_factor_id,
+                        EmissionFactor.external_id == target_ext_id,
                         EmissionFactor.geography.ilike(supplier.region) 
                     ).first()
                     
-                if factor:
-                    method = f"CEDA_{supplier.region}_Specific"
-                else:
-                    # 3b. Try 'Global' or 'RoW' (Rest of World) if region match fails or is missing
+                    if factor:
+                        method = f"CEDA_{supplier.region}_Specific"
+
+                # Fallback: Try 'Global' or 'US' if exact country match fails
+                if not factor:
                     factor = db.query(EmissionFactor).filter(
                         EmissionFactor.provider == "Open CEDA",
-                        EmissionFactor.external_id == mapping.emission_factor_id,
+                        EmissionFactor.external_id == target_ext_id,
                         EmissionFactor.geography.in_(["Global", "Rest of World", "RoW", "US"])
-                    ).order_by(EmissionFactor.geography.desc()).first() # Prioritize US/Global
+                    ).order_by(EmissionFactor.geography.desc()).first()
                     
                     if factor:
                         method = "CEDA_Global_Fallback"
 
-        # Final Safety Check
+        # Final Safety Check (Triggers Resolution Center)
         if not factor:
             record.calculated_co2e = None
             record.calculation_method = "Requires_Mapping"
@@ -96,7 +108,6 @@ def calculate_emissions(db: Session):
             elif not is_spend_based and record.quantity is not None:
                 base_value = Decimal(str(record.quantity))
             else:
-                # Last resort fallback to whatever number exists
                 val = record.spend_amount or record.quantity
                 if val is not None:
                     base_value = Decimal(str(val))
