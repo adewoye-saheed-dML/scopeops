@@ -162,14 +162,13 @@ async def bulk_upload_spend(
         except Exception as e:
             errors.append(f"Row {row_number}: Unexpected error - {str(e)}")
 
-   # Bulk insert valid records
+    # Bulk insert valid records
     if records_to_insert:
         try:
             db.add_all(records_to_insert)
             db.commit()
             
-            # --- ADD THIS LINE ---
-            # Instantly run the engine on the new records to tag them!
+            # --- CRITICAL FIX: Instantly run the engine to tag unmapped records ---
             calculate_emissions(db)
             
         except IntegrityError:
