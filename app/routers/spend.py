@@ -162,15 +162,20 @@ async def bulk_upload_spend(
         except Exception as e:
             errors.append(f"Row {row_number}: Unexpected error - {str(e)}")
 
-    # Bulk insert valid records
+   # Bulk insert valid records
     if records_to_insert:
         try:
             db.add_all(records_to_insert)
             db.commit()
+            
+            # --- ADD THIS LINE ---
+            # Instantly run the engine on the new records to tag them!
+            calculate_emissions(db)
+            
         except IntegrityError:
             db.rollback()
             raise HTTPException(status_code=400, detail="Database integrity error during bulk insert.")
-
+   
     # Return a summary report
     return {
         "message": "Bulk upload processed",
