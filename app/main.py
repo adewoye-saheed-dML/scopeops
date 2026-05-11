@@ -4,6 +4,7 @@ from app.database import Base, engine, get_db
 from app.routers import suppliers, spend, emission_factors, auth
 from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 
 app = FastAPI(title="Procurement Carbon Engine")
@@ -32,3 +33,7 @@ def root():
 def db_health_check(db = Depends(get_db)):
     db.execute(text("SELECT 1"))
     return {"status": "ok_fine"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=False)
